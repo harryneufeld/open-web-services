@@ -1,0 +1,150 @@
+@page "/servers/{Id:guid}"
+@rendermode InteractiveServer
+@inject UseCaseRunner Runner
+@inject IAppTemplateCatalog Templates
+@inject NavigationManager Navigation
+
+<PageTitle>@(_server?.Name ?? "Server")</PageTitle>
+
+<AutoRefresh Seconds="3" OnTick="LoadAsync" />
+
+@if (_error is not null)
+{
+    <p class="alert">@_error</p>
+}
+
+@if (_server is null)
+{
+    <p>Loading…</p>
+}
+else
+{
+    <div class="page-head">
+        <h1>@_server.Name <span class="badge @_server.Status.ToString().ToLowerInvariant()">@_server.Status</span></h1>
+        <a href="/">← All servers</a>
+    </div>
+
+    @if (_server.FailureReason is not null)
+    {
+        <p class="alert">@_server.FailureReason</p>
+    }
+
+    <dl class="facts">
+        <dt>Provider</dt><dd>@_server.ProviderId</dd>
+        <dt>Location</dt><dd>@_server.Location</dd>
+        <dt>Type</dt><dd>@_server.ServerType</dd>
+        <dt>Image</dt><dd>@_server.Image</dd>
+        <dt>IPv4</dt><dd>@(_server.PublicIpv4 ?? "–")</dd>
+        <dt>Net / month</dt><dd>@Formatting.Money(_server.MonthlyPriceNet, _server.Currency)</dd>
+    </dl>
+
+    <h2>Power</h2>
+    <div class="actions">
+        <button class="btn" disabled="@_busy" @onclick="() => PowerAsync(PowerAction.PowerOn)">Power on</button>
+        <button class="btn" disabled="@_busy" @onclick="() => PowerAsync(PowerAction.Shutdown)">Shut down</button>
+        <button class="btn" disabled="@_busy" @onclick="() => PowerAsync(PowerAction.Reboot)">Reboot</button>
+        @if (_confirmDelete)
+        {
+            <button class="btn danger" disabled="@_busy" @onclick="DeleteAsync">Really delete?</button>
+            <button class="btn" @onclick="() => _confirmDelete = false">Cancel</button>
+        }
+        else
+        {
+            <button class="btn danger" disabled="@_busy" @onclick="() => _confirmDelete = true">Delete</button>
+        }
+    </div>
+
+    <h2>Apps</h2>
+    <div class="form inline-form">
+        <select @bind="_templateId">
+            @foreach (var t in Templates.All)
+            {
+                <option value="@t.Id">@t.Name – @t.Description</option>
+            }
+        </select>
+        <button class="btn primary" disabled="@(_busy || !_server.IsReachable)" @onclick="InstallAsync">Install</button>
+    </div>
+    @if (!_server.IsReachable)
+    {
+        <p class="muted">Apps can be installed once the server is running.</p>
+    }
+
+    @foreach (var install in _installs)
+    {
+        <details open="@(install.Status is AppInstallStatus.Installing or AppInstallStatus.Failed)">
+            <summary>
+                @install.TemplateId
+                <span class="badge @install.Status.ToString().ToLowerInvariant()">@install.Status</span>
+                <span class="muted">@install.CreatedAtUtc.ToString("u")</span>
+            </summary>
+            <pre>@install.Log</pre>
+        </details>
+    }
+}
+
+@code {
+    private Server? _server;
+    private IReadOnlyList<AppInstall> _installs = [];
+    private string? _error;
+    private string _templateId = "";
+    private bool _busy;
+    private bool _confirmDelete;
+
+    [Parameter] public Guid Id { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        _templateId = Templates.All[0].Id;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            _server = await Runner.RunAsync<ServerQueries, Server>(q => q.GetAsync(Id, CancellationToken.None));
+            _installs = await Runner.RunAsync<ServerQueries, IReadOnlyList<AppInstall>>(q => q.ListInstallsAsync(Id, CancellationToken.None));
+        }
+        catch (NotFoundException)
+        {
+            Navigation.NavigateTo("/");
+        }
+        catch (Exception ex) when (UserFacingErrors.Matches(ex))
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private Task PowerAsync(PowerAction action) =>
+        RunCommandAsync(() => Runner.RunAsync<ControlServerPower>(u => u.ExecuteAsync(Id, action, CancellationToken.None)));
+
+    private Task InstallAsync() =>
+        RunCommandAsync(() => Runner.RunAsync<RequestAppInstall, Guid>(u => u.ExecuteAsync(Id, _templateId, CancellationToken.None)));
+
+    private async Task DeleteAsync()
+    {
+        await RunCommandAsync(() => Runner.RunAsync<DeleteServer>(u => u.ExecuteAsync(Id, CancellationToken.None)));
+        if (_error is null)
+            Navigation.NavigateTo("/");
+    }
+
+    private async Task RunCommandAsync(Func<Task> command)
+    {
+        _busy = true;
+        _error = null;
+        try
+        {
+            await command();
+            await LoadAsync();
+        }
+        catch (Exception ex) when (UserFacingErrors.Matches(ex))
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+            _confirmDelete = false;
+        }
+    }
+}

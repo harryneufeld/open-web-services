@@ -1,0 +1,15 @@
+# Local development database: `docker compose up -d db`
+services:
+  db:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ows
+      POSTGRES_PASSWORD: ows
+      POSTGRES_DB: ows
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+volumes:
+  dbdata:

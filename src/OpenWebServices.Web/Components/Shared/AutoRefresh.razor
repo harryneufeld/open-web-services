@@ -1,0 +1,40 @@
+@implements IDisposable
+
+@code {
+    private readonly CancellationTokenSource _cts = new();
+
+    [Parameter, EditorRequired] public int Seconds { get; set; }
+    [Parameter, EditorRequired] public Func<Task> OnTick { get; set; } = default!;
+
+    protected override void OnInitialized() => _ = RunAsync();
+
+    private async Task RunAsync()
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(Seconds));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(_cts.Token))
+            {
+                await InvokeAsync(async () =>
+                {
+                    await OnTick();
+                    StateHasChanged();
+                });
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // component disposed
+        }
+        catch (Exception ex)
+        {
+            await DispatchExceptionAsync(ex);
+        }
+    }
+
+    public void Dispose()
+    {
+        _cts.Cancel();
+        _cts.Dispose();
+    }
+}

@@ -1,0 +1,135 @@
+@page "/servers/new"
+@rendermode InteractiveServer
+@inject UseCaseRunner Runner
+@inject NavigationManager Navigation
+
+<PageTitle>New server</PageTitle>
+
+<h1>New server</h1>
+
+@if (_error is not null)
+{
+    <p class="alert">@_error</p>
+}
+
+@if (_offers is null)
+{
+    <p>Loading offers…</p>
+}
+else if (_offers.Count == 0)
+{
+    <p class="muted">No offers available. Add a provider token under <a href="/settings">Settings</a> first.</p>
+}
+else
+{
+    <div class="filters">
+        <label>Min. vCPUs
+            <select @bind="_minCpus"><option value="1">1</option><option value="2">2</option><option value="4">4</option><option value="8">8</option></select>
+        </label>
+        <label>Min. RAM (GB)
+            <select @bind="_minMemory"><option value="1">1</option><option value="4">4</option><option value="8">8</option><option value="16">16</option></select>
+        </label>
+        <label class="inline"><input type="checkbox" @bind="_onlyAvailable" /> Only available now</label>
+    </div>
+
+    <table>
+        <thead>
+            <tr><th></th><th>Provider</th><th>Location</th><th>Type</th><th>vCPU</th><th>RAM</th><th>Disk</th><th class="num">Net / month</th><th class="num">Gross / month</th></tr>
+        </thead>
+        <tbody>
+            @foreach (var o in FilteredOffers)
+            {
+                <tr class="@(o.Key == _selectedKey ? "selected" : null) @(o.Available ? null : "unavailable")"
+                    @onclick="() => Select(o)">
+                    <td><input type="radio" name="offer" checked="@(o.Key == _selectedKey)" disabled="@(!o.Available)" /></td>
+                    <td>@o.ProviderId</td>
+                    <td>@o.LocationCity, @o.Country (@o.Location)</td>
+                    <td>@o.TypeName <span class="muted">@o.CpuKind, @o.Architecture</span></td>
+                    <td>@o.VCpus</td>
+                    <td>@o.MemoryGb GB</td>
+                    <td>@o.DiskGb GB</td>
+                    <td class="num">@Formatting.Money(o.MonthlyNet, o.Currency)</td>
+                    <td class="num">@Formatting.Money(o.MonthlyGross, o.Currency)</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+    <div class="form">
+        <label>Name
+            <input @bind="_name" placeholder="my-server" maxlength="63" />
+        </label>
+        <label>Image
+            <select @bind="_image">
+                @foreach (var image in Images)
+                {
+                    <option value="@image">@image</option>
+                }
+            </select>
+        </label>
+        <button class="btn primary" disabled="@(_busy || Selected is null || string.IsNullOrWhiteSpace(_name))" @onclick="CreateAsync">
+            @(_busy ? "Creating…" : "Create server")
+        </button>
+    </div>
+}
+
+@code {
+    private static readonly string[] Images = ["ubuntu-24.04", "ubuntu-22.04", "debian-12"];
+
+    private IReadOnlyList<ServerOffer>? _offers;
+    private string? _error;
+    private string? _selectedKey;
+    private string _name = "";
+    private string _image = Images[0];
+    private int _minCpus = 1;
+    private int _minMemory = 1;
+    private bool _onlyAvailable = true;
+    private bool _busy;
+
+    private ServerOffer? Selected => _offers?.FirstOrDefault(o => o.Key == _selectedKey);
+
+    private IEnumerable<ServerOffer> FilteredOffers => _offers!
+        .Where(o => o.VCpus >= _minCpus && o.MemoryGb >= _minMemory && (o.Available || !_onlyAvailable));
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _offers = await Runner.RunAsync<GetServerOffers, IReadOnlyList<ServerOffer>>(q => q.ExecuteAsync(CancellationToken.None));
+        }
+        catch (Exception ex) when (UserFacingErrors.Matches(ex))
+        {
+            _error = ex.Message;
+            _offers = [];
+        }
+    }
+
+    private void Select(ServerOffer offer)
+    {
+        if (offer.Available)
+            _selectedKey = offer.Key;
+    }
+
+    private async Task CreateAsync()
+    {
+        if (Selected is not { } offer)
+            return;
+
+        _busy = true;
+        _error = null;
+        try
+        {
+            var command = new ProvisionServerCommand(_name.Trim(), offer.ProviderId, offer.Location, offer.TypeName, _image);
+            var id = await Runner.RunAsync<ProvisionServer, Guid>(u => u.ExecuteAsync(command, CancellationToken.None));
+            Navigation.NavigateTo($"/servers/{id}");
+        }
+        catch (Exception ex) when (UserFacingErrors.Matches(ex))
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

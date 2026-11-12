@@ -1,0 +1,36 @@
+@page "/setup"
+@attribute [AllowAnonymous]
+@inject UseCaseRunner Runner
+@inject NavigationManager Navigation
+
+<PageTitle>Setup</PageTitle>
+
+<div class="auth-card">
+    <h1>Create the admin account</h1>
+    <p class="muted">First-run setup. This page disappears once an account exists.</p>
+
+    @if (Error is not null)
+    {
+        <p class="alert">@Error</p>
+    }
+
+    <form method="post" action="/auth/setup" class="form stacked">
+        <AntiforgeryToken />
+        <label>Username <input name="username" autocomplete="username" minlength="3" maxlength="64" required autofocus /></label>
+        <label>Password (min. @RegisterFirstAdmin.MinPasswordLength characters)
+            <input name="password" type="password" autocomplete="new-password" minlength="@RegisterFirstAdmin.MinPasswordLength" required />
+        </label>
+        <button class="btn primary" type="submit">Create account</button>
+    </form>
+</div>
+
+@code {
+    [SupplyParameterFromQuery] public string? Error { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var setupRequired = await Runner.RunAsync<IsSetupRequired, bool>(u => u.ExecuteAsync(CancellationToken.None));
+        if (!setupRequired)
+            Navigation.NavigateTo("/login");
+    }
+}

@@ -1,0 +1,53 @@
+@page "/settings"
+@rendermode InteractiveServer
+@inject UseCaseRunner Runner
+
+<PageTitle>Settings</PageTitle>
+
+<h1>Settings</h1>
+
+<h2>Hetzner Cloud</h2>
+<p class="muted">
+    Create a project in the Hetzner Cloud Console and add an API token with read &amp; write permission
+    (Security → API tokens). The token is stored encrypted.
+</p>
+
+<div class="form">
+    <label>API token
+        <input type="password" @bind="_token" autocomplete="off" />
+    </label>
+    <button class="btn primary" disabled="@(_busy || string.IsNullOrWhiteSpace(_token))" @onclick="SaveAsync">Save token</button>
+</div>
+
+@if (_message is not null)
+{
+    <p class="@(_isError ? "alert" : "ok")">@_message</p>
+}
+
+@code {
+    private const string HetznerProviderId = "hetzner";
+
+    private string _token = "";
+    private string? _message;
+    private bool _isError;
+    private bool _busy;
+
+    private async Task SaveAsync()
+    {
+        _busy = true;
+        try
+        {
+            await Runner.RunAsync<SaveProviderToken>(u => u.ExecuteAsync(HetznerProviderId, _token, CancellationToken.None));
+            _token = "";
+            (_message, _isError) = ("Token saved.", false);
+        }
+        catch (Exception ex) when (UserFacingErrors.Matches(ex))
+        {
+            (_message, _isError) = (ex.Message, true);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

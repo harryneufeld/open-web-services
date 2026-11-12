@@ -1,0 +1,35 @@
+@page "/login"
+@attribute [AllowAnonymous]
+@inject UseCaseRunner Runner
+@inject NavigationManager Navigation
+
+<PageTitle>Sign in</PageTitle>
+
+<div class="auth-card">
+    <h1>Sign in</h1>
+
+    @if (Error is not null)
+    {
+        <p class="alert">Wrong username or password.</p>
+    }
+
+    <form method="post" action="/auth/login" class="form stacked">
+        <AntiforgeryToken />
+        <input type="hidden" name="returnUrl" value="@ReturnUrl" />
+        <label>Username <input name="username" autocomplete="username" required autofocus /></label>
+        <label>Password <input name="password" type="password" autocomplete="current-password" required /></label>
+        <button class="btn primary" type="submit">Sign in</button>
+    </form>
+</div>
+
+@code {
+    [SupplyParameterFromQuery] public string? Error { get; set; }
+    [SupplyParameterFromQuery] public string? ReturnUrl { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var setupRequired = await Runner.RunAsync<IsSetupRequired, bool>(u => u.ExecuteAsync(CancellationToken.None));
+        if (setupRequired)
+            Navigation.NavigateTo("/setup");
+    }
+}

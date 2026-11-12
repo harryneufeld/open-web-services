@@ -1,0 +1,68 @@
+@page "/"
+@rendermode InteractiveServer
+@inject UseCaseRunner Runner
+
+<PageTitle>Servers</PageTitle>
+
+<div class="page-head">
+    <h1>Servers</h1>
+    <a class="btn primary" href="/servers/new">New server</a>
+</div>
+
+<AutoRefresh Seconds="5" OnTick="LoadAsync" />
+
+@if (_error is not null)
+{
+    <p class="alert">@_error</p>
+}
+
+@if (_servers is null)
+{
+    <p>Loading…</p>
+}
+else if (_servers.Count == 0)
+{
+    <p class="muted">No servers yet. Add your Hetzner token under <a href="/settings">Settings</a>, then create one.</p>
+}
+else
+{
+    <table>
+        <thead>
+            <tr><th>Name</th><th>Provider</th><th>Location</th><th>Type</th><th>Status</th><th>IPv4</th><th class="num">Net / month</th></tr>
+        </thead>
+        <tbody>
+            @foreach (var s in _servers)
+            {
+                <tr>
+                    <td><a href="/servers/@s.Id">@s.Name</a></td>
+                    <td>@s.ProviderId</td>
+                    <td>@s.Location</td>
+                    <td>@s.ServerType</td>
+                    <td><span class="badge @s.Status.ToString().ToLowerInvariant()">@s.Status</span></td>
+                    <td>@(s.PublicIpv4 ?? "–")</td>
+                    <td class="num">@Formatting.Money(s.MonthlyPriceNet, s.Currency)</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private IReadOnlyList<Server>? _servers;
+    private string? _error;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            _servers = await Runner.RunAsync<ServerQueries, IReadOnlyList<Server>>(q => q.ListAsync(CancellationToken.None));
+            _error = null;
+        }
+        catch (Exception ex) when (UserFacingErrors.Matches(ex))
+        {
+            _error = ex.Message;
+        }
+    }
+}
