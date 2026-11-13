@@ -10,15 +10,22 @@
     <div class="panel">
         <form method="post" action="/auth/login" class="panel-body">
             <h1>Sign in to your console</h1>
-            @if (Error is not null)
+            @if (ErrorText is { } error)
             {
-                <Notice Kind="error">Wrong username or password.</Notice>
+                <Notice Kind="error">@error</Notice>
             }
             <AntiforgeryToken />
             <input type="hidden" name="returnUrl" value="@ReturnUrl" />
-            <label class="field"><span>Username</span><input name="username" autocomplete="username" required autofocus /></label>
+            <label class="field"><span>Username</span><input name="username" autocomplete="username webauthn" required autofocus /></label>
             <label class="field"><span>Password</span><input name="password" type="password" autocomplete="current-password" required /></label>
             <button class="btn btn-primary btn-block" type="submit">Sign in</button>
+        </form>
+        <form method="post" action="/auth/passkey/login" class="panel-footer passkey-form" data-passkey="login" data-options-url="/auth/passkey/options">
+            <AntiforgeryToken />
+            <input type="hidden" name="returnUrl" value="@ReturnUrl" />
+            <input type="hidden" name="credential" />
+            <button class="btn btn-block" type="submit"><Icon Name="key" />Sign in with a passkey</button>
+            <span class="hint" data-passkey-status role="status"></span>
         </form>
     </div>
     <p class="auth-foot">Open Web Services: one console, many providers.</p>
@@ -27,6 +34,15 @@
 @code {
     [SupplyParameterFromQuery] public string? Error { get; set; }
     [SupplyParameterFromQuery] public string? ReturnUrl { get; set; }
+
+    private string? ErrorText => Error switch
+    {
+        null => null,
+        "locked" => "Too many failed attempts. This account is locked for 15 minutes.",
+        "passkey" => "That passkey was not accepted. Try again or sign in with your password.",
+        "expired" => "The sign-in took too long. Please start again.",
+        _ => "Wrong username or password.",
+    };
 
     protected override async Task OnInitializedAsync()
     {

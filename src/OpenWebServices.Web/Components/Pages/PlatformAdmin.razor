@@ -1,0 +1,258 @@
+@page "/admin"
+@rendermode InteractiveServer
+@inject UseCaseRunner Runner
+@inject NavigationManager Navigation
+
+<PageTitle>Platform admin · ows</PageTitle>
+
+<header class="page-header">
+    <div>
+        <h1>Platform admin</h1>
+        <p>Tenants, accounts and the security log of this ows installation. Admins see no tenant's resources unless they are members.</p>
+    </div>
+</header>
+
+@if (_message is not null)
+{
+    <Notice Kind="@(_isError ? "error" : "success")">@_message</Notice>
+}
+
+@if (_link is not null)
+{
+    <Notice Kind="success">Owner invitation link (shown once, valid 7 days): <code class="mono secret">@_link</code></Notice>
+}
+
+<section class="panel" aria-labelledby="tenants">
+    <div class="panel-header"><div><h2 id="tenants">Tenants</h2><p>Each tenant is a customer organization with its own provider groups and members.</p></div></div>
+    @if (_tenants is null)
+    {
+        <SkeletonRows />
+    }
+    else
+    {
+        <div class="table-wrap">
+            <table class="stack">
+                <thead><tr><th>Name</th><th>Owners</th><th class="num">Members</th><th>Second factor</th><th>Created</th><th><span class="sr-only">Actions</span></th></tr></thead>
+                <tbody>
+                    @foreach (var t in _tenants)
+                    {
+                        <tr>
+                            <td>@t.Tenant.Name</td>
+                            <td data-label="Owners">@(t.Owners.Count == 0 ? "none" : string.Join(", ", t.Owners))</td>
+                            <td data-label="Members" class="num">@t.MemberCount</td>
+                            <td data-label="Second factor">@(t.Tenant.RequireTwoFactor ? "Required" : "Optional")</td>
+                            <td data-label="Created">@t.Tenant.CreatedAtUtc.ToString("yyyy-MM-dd")</td>
+                            <td class="num"><button class="btn btn-ghost btn-sm" disabled="@_busy" @onclick="() => InviteOwnerAsync(t.Tenant.Id)">Owner invitation</button></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+    <div class="panel-body form-grid">
+        <label class="field"><span>New tenant</span><input @bind="_newTenant" @bind:event="oninput" maxlength="@Tenant.MaxNameLength" placeholder="Organization name" /></label>
+        <label class="field"><span>Owner invitation for</span><input @bind="_ownerNote" disabled="@_addMe" maxlength="@TenantInvitation.MaxNoteLength" placeholder="Name or e-mail of the owner" /></label>
+        <label class="check"><input type="checkbox" @bind="_addMe" />Make me the owner instead of inviting someone</label>
+    </div>
+    <div class="panel-footer">
+        <button class="btn btn-primary" disabled="@(_busy || string.IsNullOrWhiteSpace(_newTenant))" @onclick="CreateTenantAsync"><Icon Name="plus" />Create tenant</button>
+    </div>
+</section>
+
+<section class="panel" aria-labelledby="users">
+    <div class="panel-header"><div><h2 id="users">Accounts</h2><p>Locking ends the account's sessions within a minute. Resetting second factors helps someone who lost their phone and recovery codes.</p></div></div>
+    @if (_users is null)
+    {
+        <SkeletonRows />
+    }
+    else
+    {
+        <div class="table-wrap">
+            <table class="stack">
+                <thead><tr><th>User</th><th>Tenants</th><th>Second factor</th><th>Status</th><th><span class="sr-only">Actions</span></th></tr></thead>
+                <tbody>
+                    @foreach (var view in _users)
+                    {
+                        var u = view.User;
+                        var isMe = u.Id == _myId;
+                        <tr>
+                            <td>@u.UserName @if (u.IsOwsAdmin) { <span class="tag">ows admin</span> } @if (isMe) { <span class="tag">You</span> }</td>
+                            <td data-label="Tenants">@(view.Tenants.Count == 0 ? "–" : string.Join(", ", view.Tenants))</td>
+                            <td data-label="Second factor">@SecondFactor(u)</td>
+                            <td data-label="Status"><StatusBadge Text="@(u.IsLockedOut ? "Locked" : "Active")" /></td>
+                            <td class="num">
+                                @if (_confirm == (u.Id, ResetAction))
+                                {
+                                    <span class="actions">
+                                        <button class="btn btn-sm" @onclick="() => _confirm = null">Cancel</button>
+                                        <button class="btn btn-sm btn-danger-solid" disabled="@_busy" @onclick="() => ResetAsync(u)">Reset second factors</button>
+                                    </span>
+                                }
+                                else
+                                {
+                                    <span class="actions">
+                                        <button class="btn btn-ghost btn-sm" disabled="@_busy" @onclick="() => SetAdminAsync(u, !u.IsOwsAdmin)">@(u.IsOwsAdmin ? "Revoke admin" : "Make admin")</button>
+                                        @if (!isMe)
+                                        {
+                                            <button class="btn btn-ghost btn-sm" disabled="@_busy" @onclick="() => SetLockedAsync(u, !u.IsLockedOut)">@(u.IsLockedOut ? "Unlock" : "Lock")</button>
+                                            @if (u.HasSecondFactor)
+                                            {
+                                                <button class="btn btn-ghost btn-sm" @onclick="() => _confirm = (u.Id, ResetAction)">Reset 2FA…</button>
+                                            }
+                                        }
+                                    </span>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</section>
+
+<section class="panel" aria-labelledby="audit">
+    <div class="panel-header"><div><h2 id="audit">Security log</h2><p>The latest 100 events.</p></div></div>
+    @if (_audit is null)
+    {
+        <SkeletonRows />
+    }
+    else if (_audit.Count == 0)
+    {
+        <div class="panel-body"><p class="muted">Nothing logged yet.</p></div>
+    }
+    else
+    {
+        <div class="table-wrap">
+            <table class="stack">
+                <thead><tr><th>When (UTC)</th><th>Event</th><th>Detail</th><th>Who</th><th>Tenant</th><th>IP</th></tr></thead>
+                <tbody>
+                    @foreach (var e in _audit)
+                    {
+                        <tr>
+                            <td class="mono">@e.Record.AtUtc.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                            <td data-label="Event">@e.Record.Type</td>
+                            <td data-label="Detail">@e.Record.Detail</td>
+                            <td data-label="Who">@e.Actor</td>
+                            <td data-label="Tenant">@e.Tenant</td>
+                            <td data-label="IP" class="mono">@e.Record.IpAddress</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</section>
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    private IReadOnlyList<TenantOverview>? _tenants;
+    private IReadOnlyList<UserOverview>? _users;
+    private IReadOnlyList<AuditView>? _audit;
+    private Guid? _myId;
+    private const string ResetAction = "reset";
+    private (Guid, string)? _confirm;
+    private string _newTenant = "";
+    private string _ownerNote = "";
+    private bool _addMe;
+    private string? _link;
+    private bool _busy;
+    private string? _message;
+    private bool _isError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _myId = Sessions.UserId((await AuthenticationState).User);
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            _tenants = await Runner.RunAsync<PlatformQueries, IReadOnlyList<TenantOverview>>(q => q.ListTenantsAsync(CancellationToken.None));
+            _users = await Runner.RunAsync<PlatformQueries, IReadOnlyList<UserOverview>>(q => q.ListUsersAsync(CancellationToken.None));
+            _audit = await Runner.RunAsync<PlatformQueries, IReadOnlyList<AuditView>>(q => q.ListAuditAsync(100, CancellationToken.None));
+        }
+        catch (Exception ex) when (UserFacingErrors.Matches(ex))
+        {
+            Show(ex.Message, isError: true);
+        }
+    }
+
+    private static string SecondFactor(UserSummary u) =>
+        (u.HasAuthenticator, u.PasskeyCount) switch
+        {
+            (false, 0) => "None",
+            (true, 0) => "Authenticator",
+            (false, var n) => $"{n} passkey{(n == 1 ? "" : "s")}",
+            (true, var n) => $"Authenticator, {n} passkey{(n == 1 ? "" : "s")}",
+        };
+
+    private async Task CreateTenantAsync()
+    {
+        string? token = null;
+        var name = _newTenant;
+        await RunAsync(async r => token = await r.RunAsync<CreateTenant, string?>(u => u.ExecuteAsync(name, _addMe, _ownerNote, CancellationToken.None)),
+            $"Tenant '{name.Trim()}' created.");
+        if (!_isError)
+        {
+            _link = token is null ? null : Navigation.ToAbsoluteUri($"/invite/{token}").ToString();
+            _newTenant = _ownerNote = "";
+        }
+    }
+
+    private async Task InviteOwnerAsync(Guid tenantId)
+    {
+        string? token = null;
+        await RunAsync(async r => token = await r.RunAsync<CreateOwnerInvitation, string>(u => u.ExecuteAsync(tenantId, "", CancellationToken.None)), null);
+        if (token is not null)
+            _link = Navigation.ToAbsoluteUri($"/invite/{token}").ToString();
+    }
+
+    private Task SetAdminAsync(UserSummary user, bool isAdmin) =>
+        RunAsync(r => r.RunAsync<SetOwsAdmin>(u => u.ExecuteAsync(user.Id, isAdmin, CancellationToken.None)),
+            isAdmin ? $"{user.UserName} is now an ows admin. They need a second factor to use it." : $"{user.UserName} is no longer an ows admin.");
+
+    private Task SetLockedAsync(UserSummary user, bool locked) =>
+        RunAsync(r => r.RunAsync<SetUserLocked>(u => u.ExecuteAsync(user.Id, locked, CancellationToken.None)),
+            locked ? $"{user.UserName} is locked." : $"{user.UserName} is unlocked.");
+
+    private async Task ResetAsync(UserSummary user)
+    {
+        await RunAsync(r => r.RunAsync<ResetUserSecondFactors>(u => u.ExecuteAsync(user.Id, CancellationToken.None)),
+            $"Second factors of {user.UserName} were removed. They can sign in with their password and set up new ones.");
+        _confirm = null;
+    }
+
+    private async Task RunAsync(Func<UseCaseRunner, Task> action, string? success)
+    {
+        _busy = true;
+        _link = null;
+        try
+        {
+            await action(Runner);
+            if (success is not null)
+                Show(success, isError: false);
+            else
+                _message = null;
+        }
+        catch (Exception ex) when (UserFacingErrors.Matches(ex))
+        {
+            Show(ex.Message, isError: true);
+        }
+        finally
+        {
+            _busy = false;
+        }
+
+        await LoadAsync();
+    }
+
+    private void Show(string message, bool isError)
+    {
+        _message = message;
+        _isError = isError;
+    }
+}

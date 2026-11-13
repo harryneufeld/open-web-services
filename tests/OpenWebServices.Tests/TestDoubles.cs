@@ -2,6 +2,7 @@ using OpenWebServices.Application.Abstractions;
 using OpenWebServices.Domain.Dns;
 using OpenWebServices.Domain.Providers;
 using OpenWebServices.Domain.Servers;
+using OpenWebServices.Domain.Tenants;
 
 namespace OpenWebServices.Tests;
 
@@ -23,8 +24,16 @@ internal sealed class FakeUnitOfWork : IUnitOfWork
 
 internal sealed class ReversingSecretProtector : ISecretProtector
 {
-    public string Protect(string plainText) => "enc:" + plainText;
-    public string Unprotect(string protectedText) => protectedText["enc:".Length..];
+    public string Protect(string plainText, Guid tenantId, string purpose) => "enc:" + plainText;
+    public string Unprotect(string protectedText, Guid tenantId, string purpose) => protectedText["enc:".Length..];
+}
+
+internal sealed class FakeAuditLog : IAuditLog
+{
+    public List<AuditEntry> Entries { get; } = [];
+    public void Add(AuditEntry entry) => Entries.Add(entry);
+    public Task<IReadOnlyList<AuditRecord>> ListRecentAsync(int count, CancellationToken ct) =>
+        Task.FromResult<IReadOnlyList<AuditRecord>>([]);
 }
 
 internal sealed class FakeKeyGenerator : ISshKeyGenerator
@@ -183,8 +192,19 @@ internal sealed class FakeConnectionFactory(FakeConnection connection) : IProvid
 
 internal static class TestData
 {
+    public static readonly Guid TenantId = Guid.Parse("11111111-1111-1111-1111-111111111111");
+
+    /// <summary>An access context for a user with the given role in <see cref="TenantId"/>.</summary>
+    public static AccessContext Access(TenantRole role = TenantRole.Owner)
+    {
+        var access = new AccessContext();
+        access.SetUser(Guid.NewGuid(), "tester", strongSession: true, isOwsAdmin: false);
+        access.SetTenant(TenantId, "Test tenant", role);
+        return access;
+    }
+
     public static ProviderGroup Group(ResourceKind kinds = ResourceKind.Servers | ResourceKind.Dns) =>
-        ProviderGroup.Create("Test", "fake", "enc:{\"api_token\":\"t\"}", kinds, new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+        ProviderGroup.Create(TenantId, "Test", "fake", "enc:{\"api_token\":\"t\"}", kinds, new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc));
 
     public static ProviderServer Remote(string id, string name = "web", ObservedServerState state = ObservedServerState.Running) =>
         new(id, name, state, "203.0.113." + id, "fsn1", "cx23", "ubuntu-24.04", 4m, "EUR");

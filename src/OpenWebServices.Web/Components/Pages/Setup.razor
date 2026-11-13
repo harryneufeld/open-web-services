@@ -10,20 +10,28 @@
     <div class="panel">
         <form method="post" action="/auth/setup" class="panel-body">
             <div>
-                <h1>Create the admin account</h1>
-                <p class="muted">First-run setup. This page disappears once an account exists.</p>
+                <h1>Set up ows</h1>
+                <p class="muted">First-run setup. You become the ows admin and owner of your first organization. This page disappears once an account exists.</p>
             </div>
             @if (Error is not null)
             {
                 <Notice Kind="error">@Error</Notice>
             }
             <AntiforgeryToken />
-            <label class="field"><span>Username</span><input name="username" autocomplete="username" minlength="3" maxlength="64" required autofocus /></label>
+            <label class="field"><span>Organization</span>
+                <input name="tenant" maxlength="@Tenant.MaxNameLength" required autofocus placeholder="e.g. Acme GmbH" />
+                <span class="hint">Your first tenant. Provider groups, servers and DNS belong to it.</span>
+            </label>
+            <label class="field"><span>Username</span>
+                <input name="username" autocomplete="username" minlength="3" maxlength="64" required pattern="[A-Za-z0-9._@@-]+" />
+                <span class="hint">Letters, digits and . _ - @@</span>
+            </label>
             <label class="field"><span>Password</span>
-                <input name="password" type="password" autocomplete="new-password" minlength="@RegisterFirstAdmin.MinPasswordLength" required />
-                <span class="hint">At least @RegisterFirstAdmin.MinPasswordLength characters.</span>
+                <input name="password" type="password" autocomplete="new-password" minlength="@OpenWebServices.Infrastructure.Passwords.MinLength" required />
+                <span class="hint">At least @OpenWebServices.Infrastructure.Passwords.MinLength characters. A passphrase works well.</span>
             </label>
             <button class="btn btn-primary btn-block" type="submit">Create account</button>
+            <p class="fineprint">Next you set up a second factor: ows admins always need one.</p>
         </form>
     </div>
 </div>

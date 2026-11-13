@@ -75,7 +75,7 @@ public class SyncGroupTests
     [Fact]
     public async Task Does_not_import_a_server_that_is_being_provisioned()
     {
-        var provisioning = Server.Provision(_group.Id, "web", "fsn1", "cx23", "ubuntu-24.04", 4m, "EUR", "key", _clock.UtcNow);
+        var provisioning = Server.Provision(_group.TenantId, _group.Id, "web", "fsn1", "cx23", "ubuntu-24.04", 4m, "EUR", "key", _clock.UtcNow);
         _servers.Add(provisioning);
         _connection.ServerProvider.Servers.Add(TestData.Remote("1", "web", ObservedServerState.Starting));
 
@@ -87,7 +87,7 @@ public class SyncGroupTests
     [Fact]
     public async Task Vanished_imported_servers_are_removed_but_created_ones_are_marked_failed()
     {
-        var created = Server.Provision(_group.Id, "mine", "fsn1", "cx23", "ubuntu-24.04", 4m, "EUR", "key", _clock.UtcNow);
+        var created = Server.Provision(_group.TenantId, _group.Id, "mine", "fsn1", "cx23", "ubuntu-24.04", 4m, "EUR", "key", _clock.UtcNow);
         created.AttachProviderResources("2", "7", null);
         _servers.Add(created);
         _connection.ServerProvider.Servers.Add(TestData.Remote("1"));
@@ -105,7 +105,7 @@ public class SyncGroupTests
     [Fact]
     public async Task Vanished_zones_are_removed()
     {
-        _zones.Add(DnsZone.Track(_group.Id, "5", "old.example", _clock.UtcNow));
+        _zones.Add(DnsZone.Track(_group.TenantId, _group.Id, "5", "old.example", _clock.UtcNow));
 
         await SyncAsync();
 

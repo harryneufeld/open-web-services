@@ -1,10 +1,34 @@
 @inherits LayoutComponentBase
+@inject UseCaseRunner Runner
+@inject NavigationManager Navigation
 
 <AuthorizeView>
     <Authorized>
         <div class="shell">
             <aside class="sidebar">
                 <a class="brand" href="/" aria-label="ows console home"><BrandMark /><small>Open Web<br />Services</small></a>
+                @if (_session is { Tenants.Count: > 0 } session)
+                {
+                    <details class="tenant-switcher">
+                        <summary>
+                            <span class="tenant-label">Tenant</span>
+                            <span class="tenant-name">@(session.CurrentTenant?.Name ?? "Choose a tenant")</span>
+                            @if (session.CurrentTenant is { } current)
+                            {
+                                <small>@current.Role</small>
+                            }
+                        </summary>
+                        <form method="post" action="/auth/switch-tenant">
+                            <AntiforgeryToken />
+                            @foreach (var tenant in session.Tenants)
+                            {
+                                <button type="submit" name="tenantId" value="@tenant.Id" aria-current="@(tenant.Id == session.CurrentTenantId ? "true" : null)">
+                                    <span>@tenant.Name</span><small>@tenant.Role</small>
+                                </button>
+                            }
+                        </form>
+                    </details>
+                }
                 <nav class="nav" aria-label="Main">
                     <NavLink href="/" Match="NavLinkMatch.All"><Icon Name="overview" />Console home</NavLink>
                     <span class="nav-label">Compute</span>
@@ -13,12 +37,20 @@
                     <NavLink href="/dns"><ServiceBadge Service="OwsService.Dns" />Route 66<span class="plain">DNS</span></NavLink>
                     <span class="nav-label">Accounts</span>
                     <NavLink href="/groups"><ServiceBadge Service="OwsService.Groups" />IOU<span class="plain">Groups</span></NavLink>
+                    <NavLink href="/tenant"><Icon Name="users" />Members</NavLink>
+                    <NavLink href="/account/security"><Icon Name="shield" />Account security</NavLink>
+                    @if (_session?.IsOwsAdmin == true)
+                    {
+                        <NavLink href="/admin"><Icon Name="key" />Platform admin</NavLink>
+                    }
                     <span class="nav-label">Coming eventually</span>
                     <span class="soon" title="Not built yet"><ServiceBadge Service="OwsService.Storage" />S4<span class="plain">Storage</span></span>
                 </nav>
                 <div class="sidebar-footer">
-                    <span class="avatar" aria-hidden="true">@Initial(context.User.Identity?.Name)</span>
-                    <span class="user">@context.User.Identity?.Name</span>
+                    <a class="account-link" href="/account/security" title="Account security">
+                        <span class="avatar" aria-hidden="true">@Initial(context.User.Identity?.Name)</span>
+                        <span class="user">@context.User.Identity?.Name</span>
+                    </a>
                     <form method="post" action="/auth/logout">
                         <AntiforgeryToken />
                         <button class="btn btn-ghost btn-sm" type="submit" title="Sign out"><Icon Name="logout" /><span class="sr-only">Sign out</span></button>
@@ -30,10 +62,23 @@
                 <NavLink href="/servers"><ServiceBadge Service="OwsService.Servers" />OC2<small>Servers</small></NavLink>
                 <NavLink href="/dns"><ServiceBadge Service="OwsService.Dns" />Route 66<small>DNS</small></NavLink>
                 <NavLink href="/groups"><ServiceBadge Service="OwsService.Groups" />IOU<small>Groups</small></NavLink>
+                <NavLink href="/account/security"><Icon Name="shield" />Account<small>Security</small></NavLink>
             </nav>
             <main class="main">
                 <div class="page">
-                    @Body
+                    @if (Gate() is { } gate)
+                    {
+                        <header class="page-header"><div><h1>@gate.Title</h1></div></header>
+                        <Notice Kind="warn">@gate.Text</Notice>
+                        @if (gate.Href is not null)
+                        {
+                            <div><a class="btn btn-primary" href="@gate.Href">@gate.Action</a></div>
+                        }
+                    }
+                    else
+                    {
+                        @Body
+                    }
                 </div>
             </main>
         </div>
@@ -52,5 +97,52 @@
 </div>
 
 @code {
+    private SessionView? _session;
+
+    private sealed record GateInfo(string Title, string Text, string? Href, string? Action);
+
+    protected override async Task OnInitializedAsync() =>
+        _session = await Runner.RunAsync<SessionQueries, SessionView?>(q => q.GetAsync(CancellationToken.None));
+
+    /// <summary>
+    /// What blocks the page, if anything. The use cases enforce the same rules; this only explains them.
+    /// Account pages always stay reachable so a blocked user can fix the cause.
+    /// </summary>
+    private GateInfo? Gate()
+    {
+        var path = "/" + Navigation.ToBaseRelativePath(Navigation.Uri).Split('?', '#')[0];
+        if (_session is not { } s || path.StartsWith("/account/", StringComparison.Ordinal) || path.StartsWith("/invite/", StringComparison.Ordinal))
+            return null;
+
+        return s.Restriction switch
+        {
+            AccessRestriction.TwoFactorRequired when !s.HasSecondFactor => new(
+                "Second factor required",
+                "ows admins must protect their account with an authenticator app or a passkey before using the console.",
+                "/account/security", "Set up a second factor"),
+            AccessRestriction.TwoFactorRequired => new(
+                "Sign in with your second factor",
+                "You signed in with your password only. ows admins must use their authenticator code or a passkey. Sign out and sign in again with your passkey.",
+                null, null),
+            AccessRestriction.TenantRequiresTwoFactor when !s.HasSecondFactor => new(
+                "Second factor required",
+                $"{s.CurrentTenant?.Name ?? "This tenant"} requires an authenticator app or a passkey. Set one up, then sign in again with it.",
+                "/account/security", "Set up a second factor"),
+            AccessRestriction.TenantRequiresTwoFactor => new(
+                "Sign in with your second factor",
+                $"{s.CurrentTenant?.Name ?? "This tenant"} requires signing in with an authenticator code or a passkey. Sign out and sign in again with it.",
+                null, null),
+            _ when s.CurrentTenantId is null && s.IsOwsAdmin && path != "/admin" => new(
+                "No tenant yet",
+                "You are not a member of any tenant. Create one under Platform admin and make yourself its owner.",
+                "/admin", "Open platform admin"),
+            _ when s.CurrentTenantId is null && !s.IsOwsAdmin => new(
+                "No tenant yet",
+                "Your account is not a member of any tenant. Ask a tenant owner for an invitation link.",
+                null, null),
+            _ => null,
+        };
+    }
+
     private static string Initial(string? name) => string.IsNullOrEmpty(name) ? "?" : name[..1];
 }

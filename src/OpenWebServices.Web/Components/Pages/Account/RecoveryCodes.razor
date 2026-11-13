@@ -1,0 +1,40 @@
+@page "/account/recovery-codes"
+
+<PageTitle>Recovery codes · ows</PageTitle>
+
+<header class="page-header">
+    <div>
+        <h1>Recovery codes</h1>
+        <p>If you lose your phone, each code signs you in once instead of an authenticator code.</p>
+    </div>
+</header>
+
+@if (_codes is null)
+{
+    <Notice Kind="info">Recovery codes are shown only once, right after they are created. Create new ones under <a href="/account/security#authenticator">Account security</a>.</Notice>
+}
+else
+{
+    <Notice Kind="warn">Store these now, e.g. in your password manager. They will not be shown again, and creating new ones makes these invalid.</Notice>
+    <section class="panel">
+        <div class="panel-body">
+            <ul class="recovery-codes mono">
+                @foreach (var recoveryCode in _codes)
+                {
+                    <li>@recoveryCode</li>
+                }
+            </ul>
+        </div>
+        <div class="panel-footer">
+            <a class="btn btn-primary" href="/account/security">I have stored them</a>
+        </div>
+    </section>
+}
+
+@code {
+    [CascadingParameter] private HttpContext HttpContext { get; set; } = default!;
+
+    private IReadOnlyList<string>? _codes;
+
+    protected override void OnInitialized() => _codes = AccountEndpoints.TakeRecoveryCodes(HttpContext);
+}

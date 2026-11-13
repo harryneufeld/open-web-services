@@ -16,5 +16,6 @@ internal sealed class AppInstallConfiguration : IEntityTypeConfiguration<AppInst
         builder.Property(a => a.Log).IsRequired();
         builder.HasOne<Server>().WithMany().HasForeignKey(a => a.ServerId).OnDelete(DeleteBehavior.Cascade);
         builder.HasIndex(a => new { a.ServerId, a.Status });
+        builder.HasIndex(a => a.TenantId);
     }
 }

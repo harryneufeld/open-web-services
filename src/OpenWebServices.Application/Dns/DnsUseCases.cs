@@ -3,6 +3,7 @@ using OpenWebServices.Application.Abstractions;
 using OpenWebServices.Domain;
 using OpenWebServices.Domain.Dns;
 using OpenWebServices.Domain.Providers;
+using OpenWebServices.Domain.Tenants;
 
 namespace OpenWebServices.Application.Dns;
 
@@ -33,6 +34,7 @@ public sealed class DnsQueries(IDnsZoneRepository zones, IProviderGroupRepositor
 }
 
 public sealed class CreateDnsZone(
+    AccessContext access,
     IProviderConnectionFactory connections,
     IProviderGroupRepository groups,
     IDnsZoneRepository zones,
@@ -41,6 +43,7 @@ public sealed class CreateDnsZone(
 {
     public async Task<Guid> ExecuteAsync(Guid groupId, string domainName, CancellationToken ct)
     {
+        access.Require(TenantRole.Member);
         var group = await groups.FindAsync(groupId, ct) ?? throw new NotFoundException("Provider group");
         if (!group.IsEnabled(ResourceKind.Dns))
             throw new DomainException($"DNS is not enabled for the group '{group.Name}'.");
@@ -49,7 +52,7 @@ public sealed class CreateDnsZone(
         var dns = (await connections.ConnectAsync(groupId, ct)).RequireDns();
         var created = await dns.CreateZoneAsync(name, ct);
 
-        var zone = DnsZone.Track(groupId, created.ExternalId, created.Name, clock.UtcNow);
+        var zone = DnsZone.Track(group.TenantId, groupId, created.ExternalId, created.Name, clock.UtcNow);
         zone.Update(created.Status, created.Ttl, created.RecordCount, created.Nameservers, created.DelegationStatus, clock.UtcNow);
         zones.Add(zone);
         await unitOfWork.SaveChangesAsync(ct);
@@ -59,12 +62,14 @@ public sealed class CreateDnsZone(
 
 /// <summary>Deletes the zone at the provider (with all its records) and stops tracking it.</summary>
 public sealed class DeleteDnsZone(
+    AccessContext access,
     IProviderConnectionFactory connections,
     IDnsZoneRepository zones,
     IUnitOfWork unitOfWork)
 {
     public async Task ExecuteAsync(Guid zoneId, CancellationToken ct)
     {
+        access.Require(TenantRole.Member);
         var zone = await zones.FindAsync(zoneId, ct) ?? throw new NotFoundException("DNS zone");
         var dns = (await connections.ConnectAsync(zone.GroupId, ct)).RequireDns();
         await dns.DeleteZoneAsync(zone.ExternalId, ct);
@@ -75,6 +80,7 @@ public sealed class DeleteDnsZone(
 
 /// <summary>Record sets are read and written live at the provider; only the zone inventory is stored.</summary>
 public sealed partial class DnsRecords(
+    AccessContext access,
     IProviderConnectionFactory connections,
     IDnsZoneRepository zones,
     ISyncScheduler syncScheduler)
@@ -93,6 +99,7 @@ public sealed partial class DnsRecords(
 
     public async Task CreateAsync(Guid zoneId, DnsRecordSet recordSet, CancellationToken ct)
     {
+        access.Require(TenantRole.Member);
         var normalized = Normalize(recordSet);
         var (zone, dns) = await ConnectAsync(zoneId, ct);
         await dns.CreateRecordSetAsync(zone.ExternalId, normalized, ct);
@@ -101,6 +108,7 @@ public sealed partial class DnsRecords(
 
     public async Task UpdateAsync(Guid zoneId, DnsRecordSet recordSet, CancellationToken ct)
     {
+        access.Require(TenantRole.Member);
         var normalized = Normalize(recordSet);
         var (zone, dns) = await ConnectAsync(zoneId, ct);
         await dns.UpdateRecordSetAsync(zone.ExternalId, normalized, ct);
@@ -109,6 +117,7 @@ public sealed partial class DnsRecords(
 
     public async Task DeleteAsync(Guid zoneId, string name, string type, CancellationToken ct)
     {
+        access.Require(TenantRole.Member);
         var (zone, dns) = await ConnectAsync(zoneId, ct);
         await dns.DeleteRecordSetAsync(zone.ExternalId, name, type, ct);
         syncScheduler.RequestSync(zone.GroupId);

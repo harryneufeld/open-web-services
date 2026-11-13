@@ -516,3 +516,55 @@ a.service:hover { text-decoration: none; border-color: var(--border-strong); box
     table.stack td.values { display: block; text-align: left; padding-top: 6px; }
     table.stack td.values::before { display: block; margin-bottom: 4px; font-family: var(--font-sans); }
 }
+
+/* Tenant switcher: the tenant you work in, and the others you belong to. */
+.tenant-switcher { position: relative; margin: 0 0 6px; }
+.tenant-switcher summary {
+    list-style: none; cursor: pointer;
+    display: grid; grid-template-columns: 1fr auto; column-gap: 8px; align-items: baseline;
+    padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius);
+    background: var(--surface); box-shadow: var(--shadow-sm);
+}
+.tenant-switcher summary::-webkit-details-marker { display: none; }
+.tenant-switcher summary:focus-visible { outline: none; box-shadow: var(--ring); }
+.tenant-label { grid-column: 1 / -1; font-size: 0.6875rem; font-weight: 550; color: var(--text-3); }
+.tenant-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.tenant-switcher small, .tenant-switcher button small { font-size: 0.75rem; color: var(--text-3); }
+.tenant-switcher form {
+    position: absolute; z-index: 30; inset: calc(100% + 4px) 0 auto 0;
+    display: flex; flex-direction: column; padding: 4px;
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-md);
+}
+.tenant-switcher button {
+    display: flex; justify-content: space-between; gap: 8px; align-items: baseline;
+    padding: 7px 8px; border: 0; border-radius: calc(var(--radius) - 2px);
+    background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer;
+}
+.tenant-switcher button:hover { background: var(--surface-hover); }
+.tenant-switcher button[aria-current="true"] { background: var(--accent-soft); }
+.tenant-switcher button span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.account-link { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1; color: var(--text); }
+.account-link:hover { text-decoration: none; }
+.account-link:hover .user { text-decoration: underline; }
+
+/* Second factors */
+.steps { margin: 0 0 14px; padding-left: 1.25rem; color: var(--text-2); }
+.totp-setup { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 20px; align-items: start; }
+.qr { width: 176px; padding: 8px; background: #fff; border-radius: var(--radius); border: 1px solid var(--border); }
+.qr svg { display: block; width: 100%; height: auto; }
+.secret { display: block; padding: 8px 10px; border-radius: var(--radius); background: var(--surface-2); border: 1px solid var(--border); overflow-wrap: anywhere; user-select: all; }
+.recovery-codes { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.recovery-codes li { padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-2); text-align: center; user-select: all; }
+.passkey-form { flex-direction: column; align-items: stretch; }
+.passkey-form .hint:empty { display: none; }
+
+@media (max-width: 860px) {
+    .tenant-switcher { margin: 0; min-width: 0; flex: 0 1 220px; }
+    .tenant-switcher summary { padding: 6px 8px; }
+    .tenant-label, .tenant-switcher summary small { display: none; }
+    .account-link { flex: none; }
+    .totp-setup { grid-template-columns: 1fr; }
+}
+.actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+td .actions { justify-content: flex-end; }
