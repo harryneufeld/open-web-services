@@ -6,16 +6,21 @@ namespace OpenWebServices.Tests;
 
 public class ProvisionServerTests
 {
-    private readonly FakeHostingProvider _provider = new();
+    private static readonly Guid GroupId = Guid.NewGuid();
+
+    private readonly FakeConnection _connection = new();
     private readonly InMemoryServerRepository _servers = new();
     private readonly FakeUnitOfWork _unitOfWork = new();
+    private readonly FakeSyncScheduler _scheduler = new();
+
+    private FakeServerProvider Provider => _connection.ServerProvider;
 
     private ProvisionServer CreateSut() => new(
-        new FakeProviderFactory(_provider), _servers, new FakeKeyGenerator(),
-        new ReversingSecretProtector(), _unitOfWork, new FakeClock());
+        new FakeConnectionFactory(_connection), _servers, new FakeKeyGenerator(),
+        new ReversingSecretProtector(), _scheduler, _unitOfWork, new FakeClock());
 
     private static ProvisionServerCommand Command(string type = "cx23") =>
-        new("web-1", "hetzner", "fsn1", type, "ubuntu-24.04");
+        new(GroupId, "web-1", "fsn1", type, "ubuntu-24.04");
 
     [Fact]
     public async Task Creates_server_with_price_from_offer_and_bootstrap_script()
@@ -24,18 +29,21 @@ public class ProvisionServerTests
 
         var server = Assert.Single(_servers.Items);
         Assert.Equal(id, server.Id);
-        Assert.Equal(42, server.ProviderServerId);
-        Assert.Equal(7, server.ProviderSshKeyId);
+        Assert.Equal(GroupId, server.GroupId);
+        Assert.Equal(ServerOrigin.Created, server.Origin);
+        Assert.Equal("42", server.ExternalId);
+        Assert.Equal("7", server.ExternalSshKeyId);
         Assert.Equal("203.0.113.10", server.PublicIpv4);
         Assert.Equal(4.00m, server.MonthlyPriceNet);
         Assert.Equal("enc:PRIVATE", server.EncryptedSshPrivateKey);
-        Assert.Equal(ServerBootstrapScript.Content, _provider.LastRequest!.UserData);
+        Assert.Equal(ServerBootstrapScript.Content, Provider.LastRequest!.UserData);
+        Assert.Equal([GroupId], _scheduler.Requested);
     }
 
     [Fact]
     public async Task Persists_the_server_before_calling_the_provider()
     {
-        _provider.FailOnCreate = true;
+        Provider.FailOnCreate = true;
 
         await CreateSut().ExecuteAsync(Command(), CancellationToken.None);
 
@@ -45,14 +53,14 @@ public class ProvisionServerTests
     [Fact]
     public async Task Provider_failure_marks_server_failed_and_removes_the_ssh_key()
     {
-        _provider.FailOnCreate = true;
+        Provider.FailOnCreate = true;
 
         await CreateSut().ExecuteAsync(Command(), CancellationToken.None);
 
         var server = Assert.Single(_servers.Items);
         Assert.Equal(ServerStatus.Failed, server.Status);
         Assert.Equal("resource_unavailable", server.FailureReason);
-        Assert.Equal([7L], _provider.DeletedKeys);
+        Assert.Equal(["7"], Provider.DeletedKeys);
     }
 
     [Fact]
@@ -67,7 +75,7 @@ public class ProvisionServerTests
     [Fact]
     public async Task Unavailable_offer_is_rejected()
     {
-        _provider.Offers[0] = FakeHostingProvider.CheapOffer with { Available = false };
+        Provider.Offers[0] = FakeServerProvider.CheapOffer with { Available = false };
 
         await Assert.ThrowsAsync<OfferUnavailableException>(
             () => CreateSut().ExecuteAsync(Command(), CancellationToken.None));

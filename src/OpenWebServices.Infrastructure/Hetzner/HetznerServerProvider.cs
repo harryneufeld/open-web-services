@@ -1,13 +1,12 @@
+using System.Globalization;
 using OpenWebServices.Application.Abstractions;
+using OpenWebServices.Domain.Servers;
 
 namespace OpenWebServices.Infrastructure.Hetzner;
 
-internal sealed class HetznerProvider(HetznerApiClient api) : IHostingProvider
+internal sealed class HetznerServerProvider(HetznerApiClient api) : IServerProvider
 {
-    public const string ProviderId = "hetzner";
     private const string Currency = "EUR";
-
-    public string Id => ProviderId;
 
     public async Task<IReadOnlyList<ServerOffer>> GetOffersAsync(CancellationToken ct)
     {
@@ -26,38 +25,55 @@ internal sealed class HetznerProvider(HetznerApiClient api) : IHostingProvider
         ];
     }
 
-    public async Task<long> RegisterSshKeyAsync(string name, string publicKey, CancellationToken ct)
+    public async Task<IReadOnlyList<ProviderServer>> ListServersAsync(CancellationToken ct) =>
+        [.. (await api.GetAllAsync<HetznerServer>("servers", "servers", ct)).Select(ToProviderServer)];
+
+    public async Task<ProviderServer?> GetServerAsync(string externalId, CancellationToken ct)
+    {
+        var envelope = await api.GetAsync<HetznerServerEnvelope>($"servers/{ParseId(externalId)}", ct);
+        return envelope is null ? null : ToProviderServer(envelope.Server);
+    }
+
+    public async Task<string> RegisterSshKeyAsync(string name, string publicKey, CancellationToken ct)
     {
         var created = await api.PostAsync<HetznerSshKeyEnvelope>(
             "ssh_keys", new HetznerCreateSshKeyBody(name, publicKey), ct);
-        return created.SshKey.Id;
+        return ToExternalId(created.SshKey.Id);
     }
 
     public async Task<CreatedServer> CreateServerAsync(CreateServerRequest request, CancellationToken ct)
     {
         var body = new HetznerCreateServerBody(
             request.Name, request.TypeName, request.Location, request.Image,
-            [request.SshKeyId], request.UserData, StartAfterCreate: true);
+            [ParseId(request.SshKeyId)], request.UserData, StartAfterCreate: true);
         var created = await api.PostAsync<HetznerServerEnvelope>("servers", body, ct);
-        return new CreatedServer(created.Server.Id, created.Server.PublicNet?.Ipv4?.Ip);
+        return new CreatedServer(ToExternalId(created.Server.Id), created.Server.PublicNet?.Ipv4?.Ip);
     }
 
-    public async Task<ProviderServerState?> GetServerAsync(long providerServerId, CancellationToken ct)
+    public Task PowerAsync(string externalId, PowerAction action, CancellationToken ct) =>
+        api.PostAsync($"servers/{ParseId(externalId)}/actions/{ToActionName(action)}", ct);
+
+    public Task DeleteServerAsync(string externalId, CancellationToken ct) =>
+        api.DeleteAsync($"servers/{ParseId(externalId)}", ct);
+
+    public Task DeleteSshKeyAsync(string externalSshKeyId, CancellationToken ct) =>
+        api.DeleteAsync($"ssh_keys/{ParseId(externalSshKeyId)}", ct);
+
+    private static ProviderServer ToProviderServer(HetznerServer server)
     {
-        var envelope = await api.GetAsync<HetznerServerEnvelope>($"servers/{providerServerId}", ct);
-        return envelope is null
-            ? null
-            : new ProviderServerState(MapStatus(envelope.Server.Status), envelope.Server.PublicNet?.Ipv4?.Ip);
+        var location = server.Location?.Name ?? "";
+        var price = server.ServerType?.Prices.FirstOrDefault(p => p.Location == location)?.PriceMonthly.Net ?? 0m;
+        return new ProviderServer(
+            ToExternalId(server.Id),
+            server.Name,
+            MapStatus(server.Status),
+            server.PublicNet?.Ipv4?.Ip,
+            location.Length > 0 ? location : "unknown",
+            server.ServerType?.Name ?? "unknown",
+            server.Image?.Name ?? server.Image?.Description ?? "unknown",
+            price,
+            Currency);
     }
-
-    public Task PowerAsync(long providerServerId, PowerAction action, CancellationToken ct) =>
-        api.PostAsync($"servers/{providerServerId}/actions/{ToActionName(action)}", ct);
-
-    public Task DeleteServerAsync(long providerServerId, CancellationToken ct) =>
-        api.DeleteAsync($"servers/{providerServerId}", ct);
-
-    public Task DeleteSshKeyAsync(long providerSshKeyId, CancellationToken ct) =>
-        api.DeleteAsync($"ssh_keys/{providerSshKeyId}", ct);
 
     /// <summary>Location name -> ids of server types that can be ordered there right now. Null if unknown.</summary>
     private async Task<Dictionary<string, HashSet<long>>?> LoadAvailabilityAsync(CancellationToken ct)
@@ -86,7 +102,7 @@ internal sealed class HetznerProvider(HetznerApiClient api) : IHostingProvider
                         || (availability.TryGetValue(price.Location, out var ids) && ids.Contains(type.Id));
 
         return new ServerOffer(
-            ProviderId, price.Location, location?.City ?? price.Location, location?.Country ?? "",
+            HetznerConnector.ProviderType, price.Location, location?.City ?? price.Location, location?.Country ?? "",
             type.Name, type.Cores, type.CpuType, type.Architecture, type.Memory, type.Disk,
             price.PriceMonthly.Net, price.PriceMonthly.Gross, Currency, available);
     }
@@ -94,12 +110,13 @@ internal sealed class HetznerProvider(HetznerApiClient api) : IHostingProvider
     private static bool IsDeprecatedAt(HetznerServerType type, string location) =>
         type.Locations?.Any(l => l.Name == location && l.Deprecation is not null) ?? false;
 
-    private static ProviderServerStatus MapStatus(string status) => status switch
+    internal static ObservedServerState MapStatus(string status) => status switch
     {
-        "running" => ProviderServerStatus.Running,
-        "off" => ProviderServerStatus.Stopped,
-        "initializing" or "starting" or "migrating" or "rebuilding" => ProviderServerStatus.Starting,
-        _ => ProviderServerStatus.Unknown,
+        "running" => ObservedServerState.Running,
+        "off" => ObservedServerState.Stopped,
+        "initializing" or "starting" or "migrating" or "rebuilding" => ObservedServerState.Starting,
+        "stopping" or "deleting" => ObservedServerState.Stopping,
+        _ => ObservedServerState.Unknown,
     };
 
     private static string ToActionName(PowerAction action) => action switch
@@ -109,4 +126,11 @@ internal sealed class HetznerProvider(HetznerApiClient api) : IHostingProvider
         PowerAction.Reboot => "reboot",
         _ => throw new ArgumentOutOfRangeException(nameof(action), action, null),
     };
+
+    private static string ToExternalId(long id) => id.ToString(CultureInfo.InvariantCulture);
+
+    internal static long ParseId(string externalId) =>
+        long.TryParse(externalId, NumberStyles.None, CultureInfo.InvariantCulture, out var id)
+            ? id
+            : throw new ProviderException($"'{externalId}' is not a valid Hetzner resource id.");
 }

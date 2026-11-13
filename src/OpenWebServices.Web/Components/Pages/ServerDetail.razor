@@ -4,69 +4,82 @@
 @inject IAppTemplateCatalog Templates
 @inject NavigationManager Navigation
 
-<PageTitle>@(_server?.Name ?? "Server")</PageTitle>
+<PageTitle>@(_view?.Server.Name ?? "Server")</PageTitle>
 
-<AutoRefresh Seconds="3" OnTick="LoadAsync" />
+<LiveUpdates Topics="[ResourceTopics.Servers, ResourceTopics.AppInstalls]" Id="Id" OnChange="LoadAsync" />
 
 @if (_error is not null)
 {
     <p class="alert">@_error</p>
 }
 
-@if (_server is null)
+@if (_view is null)
 {
     <p>Loading…</p>
 }
 else
 {
+    var server = _view.Server;
     <div class="page-head">
-        <h1>@_server.Name <span class="badge @_server.Status.ToString().ToLowerInvariant()">@_server.Status</span></h1>
+        <h1>@server.Name <StatusBadge Text="@server.Status.ToString()" Busy="server.IsTransitioning" /></h1>
         <a href="/">← All servers</a>
     </div>
 
-    @if (_server.FailureReason is not null)
+    @if (server.FailureReason is not null)
     {
-        <p class="alert">@_server.FailureReason</p>
+        <p class="alert">@server.FailureReason</p>
     }
 
     <dl class="facts">
-        <dt>Provider</dt><dd>@_server.ProviderId</dd>
-        <dt>Location</dt><dd>@_server.Location</dd>
-        <dt>Type</dt><dd>@_server.ServerType</dd>
-        <dt>Image</dt><dd>@_server.Image</dd>
-        <dt>IPv4</dt><dd>@(_server.PublicIpv4 ?? "–")</dd>
-        <dt>Net / month</dt><dd>@Formatting.Money(_server.MonthlyPriceNet, _server.Currency)</dd>
+        <dt>Group</dt><dd><a href="/groups/@server.GroupId">@_view.GroupName</a> <span class="muted">@_view.ProviderName</span></dd>
+        <dt>Origin</dt><dd>@(server.Origin == ServerOrigin.Imported ? "Imported from the provider" : "Created here")</dd>
+        <dt>Location</dt><dd>@server.Location</dd>
+        <dt>Type</dt><dd>@server.ServerType</dd>
+        <dt>Image</dt><dd>@server.Image</dd>
+        <dt>IPv4</dt><dd>@(server.PublicIpv4 ?? "–")</dd>
+        <dt>Net / month</dt><dd>@Formatting.Money(server.MonthlyPriceNet, server.Currency)</dd>
     </dl>
 
     <h2>Power</h2>
     <div class="actions">
-        <button class="btn" disabled="@_busy" @onclick="() => PowerAsync(PowerAction.PowerOn)">Power on</button>
-        <button class="btn" disabled="@_busy" @onclick="() => PowerAsync(PowerAction.Shutdown)">Shut down</button>
-        <button class="btn" disabled="@_busy" @onclick="() => PowerAsync(PowerAction.Reboot)">Reboot</button>
+        <button class="btn" disabled="@(_busy || server.Status != ServerStatus.Stopped)" @onclick="() => PowerAsync(PowerAction.PowerOn)">Power on</button>
+        <button class="btn" disabled="@(_busy || server.Status != ServerStatus.Running)" @onclick="() => PowerAsync(PowerAction.Shutdown)">Shut down</button>
+        <button class="btn" disabled="@(_busy || server.Status != ServerStatus.Running)" @onclick="() => PowerAsync(PowerAction.Reboot)">Reboot</button>
         @if (_confirmDelete)
         {
-            <button class="btn danger" disabled="@_busy" @onclick="DeleteAsync">Really delete?</button>
+            <button class="btn danger" disabled="@_busy" @onclick="DeleteAsync">Really delete at the provider?</button>
             <button class="btn" @onclick="() => _confirmDelete = false">Cancel</button>
         }
         else
         {
             <button class="btn danger" disabled="@_busy" @onclick="() => _confirmDelete = true">Delete</button>
         }
+        @if (_busy)
+        {
+            <span class="muted"><span class="spinner"></span> Sending…</span>
+        }
     </div>
 
     <h2>Apps</h2>
-    <div class="form inline-form">
-        <select @bind="_templateId">
-            @foreach (var t in Templates.All)
-            {
-                <option value="@t.Id">@t.Name – @t.Description</option>
-            }
-        </select>
-        <button class="btn primary" disabled="@(_busy || !_server.IsReachable)" @onclick="InstallAsync">Install</button>
-    </div>
-    @if (!_server.IsReachable)
+    @if (server.EncryptedSshPrivateKey is null)
     {
-        <p class="muted">Apps can be installed once the server is running.</p>
+        <p class="muted">Apps can only be installed on servers created here: imported servers have no SSH key the platform can use.</p>
+    }
+    else
+    {
+        <div class="form inline-form">
+            <select @bind="_templateId">
+                @foreach (var t in Templates.All)
+                {
+                    <option value="@t.Id">@t.Name – @t.Description</option>
+                }
+            </select>
+            <button class="btn primary" disabled="@(_busy || !server.CanInstallApps)" @onclick="InstallAsync">Install</button>
+        </div>
+        @if (!server.CanInstallApps)
+        {
+            <p class="muted">Apps can be installed once the server is running.</p>
+        }
     }
 
     @foreach (var install in _installs)
@@ -74,7 +87,7 @@ else
         <details open="@(install.Status is AppInstallStatus.Installing or AppInstallStatus.Failed)">
             <summary>
                 @install.TemplateId
-                <span class="badge @install.Status.ToString().ToLowerInvariant()">@install.Status</span>
+                <StatusBadge Text="@install.Status.ToString()" Busy="install.Status is AppInstallStatus.Pending or AppInstallStatus.Installing" />
                 <span class="muted">@install.CreatedAtUtc.ToString("u")</span>
             </summary>
             <pre>@install.Log</pre>
@@ -83,7 +96,7 @@ else
 }
 
 @code {
-    private Server? _server;
+    private ServerView? _view;
     private IReadOnlyList<AppInstall> _installs = [];
     private string? _error;
     private string _templateId = "";
@@ -102,7 +115,7 @@ else
     {
         try
         {
-            _server = await Runner.RunAsync<ServerQueries, Server>(q => q.GetAsync(Id, CancellationToken.None));
+            _view = await Runner.RunAsync<ServerQueries, ServerView>(q => q.GetAsync(Id, CancellationToken.None));
             _installs = await Runner.RunAsync<ServerQueries, IReadOnlyList<AppInstall>>(q => q.ListInstallsAsync(Id, CancellationToken.None));
         }
         catch (NotFoundException)

@@ -84,17 +84,88 @@ namespace OpenWebServices.Infrastructure.Persistence.Migrations
                     b.ToTable("app_installs", (string)null);
                 });
 
-            modelBuilder.Entity("OpenWebServices.Domain.Providers.ProviderAccount", b =>
+            modelBuilder.Entity("OpenWebServices.Domain.Dns.DnsZone", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
-                    b.Property<string>("EncryptedApiToken")
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DelegationStatus")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("ExternalId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<Guid>("GroupId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("LastSyncedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(253)
+                        .HasColumnType("character varying(253)");
+
+                    b.Property<string>("Nameservers")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<int?>("RecordCount")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<int?>("Ttl")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("GroupId", "ExternalId")
+                        .IsUnique();
+
+                    b.ToTable("dns_zones", (string)null);
+                });
+
+            modelBuilder.Entity("OpenWebServices.Domain.Providers.ProviderGroup", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("EnabledResources")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("EncryptedCredentials")
                         .IsRequired()
                         .HasColumnType("text");
 
-                    b.Property<string>("ProviderId")
+                    b.Property<DateTime?>("LastSyncAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("LastSyncError")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("ProviderType")
                         .IsRequired()
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)");
@@ -104,10 +175,7 @@ namespace OpenWebServices.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("ProviderId")
-                        .IsUnique();
-
-                    b.ToTable("provider_accounts", (string)null);
+                    b.ToTable("provider_groups", (string)null);
                 });
 
             modelBuilder.Entity("OpenWebServices.Domain.Servers.Server", b =>
@@ -125,22 +193,32 @@ namespace OpenWebServices.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(3)");
 
                     b.Property<string>("EncryptedSshPrivateKey")
-                        .IsRequired()
                         .HasColumnType("text");
+
+                    b.Property<string>("ExternalId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<string>("ExternalSshKeyId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
 
                     b.Property<string>("FailureReason")
                         .HasMaxLength(2000)
                         .HasColumnType("character varying(2000)");
 
+                    b.Property<Guid>("GroupId")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("Image")
                         .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)");
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
 
                     b.Property<string>("Location")
                         .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)");
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
 
                     b.Property<decimal>("MonthlyPriceNet")
                         .HasPrecision(12, 4)
@@ -148,19 +226,16 @@ namespace OpenWebServices.Infrastructure.Persistence.Migrations
 
                     b.Property<string>("Name")
                         .IsRequired()
-                        .HasMaxLength(63)
-                        .HasColumnType("character varying(63)");
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)");
 
-                    b.Property<string>("ProviderId")
+                    b.Property<string>("Origin")
                         .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)");
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
 
-                    b.Property<long?>("ProviderServerId")
-                        .HasColumnType("bigint");
-
-                    b.Property<long?>("ProviderSshKeyId")
-                        .HasColumnType("bigint");
+                    b.Property<DateTime?>("PendingSinceUtc")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("PublicIpv4")
                         .HasMaxLength(45)
@@ -180,6 +255,8 @@ namespace OpenWebServices.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("Status");
 
+                    b.HasIndex("GroupId", "ExternalId");
+
                     b.ToTable("servers", (string)null);
                 });
 
@@ -188,6 +265,24 @@ namespace OpenWebServices.Infrastructure.Persistence.Migrations
                     b.HasOne("OpenWebServices.Domain.Servers.Server", null)
                         .WithMany()
                         .HasForeignKey("ServerId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("OpenWebServices.Domain.Dns.DnsZone", b =>
+                {
+                    b.HasOne("OpenWebServices.Domain.Providers.ProviderGroup", null)
+                        .WithMany()
+                        .HasForeignKey("GroupId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("OpenWebServices.Domain.Servers.Server", b =>
+                {
+                    b.HasOne("OpenWebServices.Domain.Providers.ProviderGroup", null)
+                        .WithMany()
+                        .HasForeignKey("GroupId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });

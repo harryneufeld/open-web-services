@@ -1,0 +1,178 @@
+@page "/groups/{Id:guid}"
+@rendermode InteractiveServer
+@inject UseCaseRunner Runner
+@inject NavigationManager Navigation
+
+<PageTitle>@(_view?.Group.Name ?? "Group")</PageTitle>
+
+<LiveUpdates Topics="[ResourceTopics.Groups]" Id="Id" OnChange="LoadAsync" />
+
+@if (_view is null)
+{
+    <p>Loading…</p>
+}
+else
+{
+    var group = _view.Group;
+    <div class="page-head">
+        <h1>@group.Name</h1>
+        <a href="/groups">← All groups</a>
+    </div>
+
+    <dl class="facts">
+        <dt>Provider</dt><dd>@_view.ProviderName</dd>
+        <dt>Servers</dt><dd><a href="/">@_view.ServerCount</a></dd>
+        <dt>DNS zones</dt><dd><a href="/dns">@_view.ZoneCount</a></dd>
+        <dt>Last sync</dt>
+        <dd>
+            @Formatting.Ago(group.LastSyncAtUtc)
+            @if (group.LastSyncError is not null)
+            {
+                <span class="badge failed">failed</span>
+            }
+        </dd>
+    </dl>
+    @if (group.LastSyncError is not null)
+    {
+        <p class="alert">@group.LastSyncError</p>
+    }
+
+    <div class="actions">
+        <button class="btn" disabled="@_busy" @onclick="SyncNowAsync">Sync now</button>
+    </div>
+
+    <h2>Settings</h2>
+    <div class="form stacked narrow">
+        <label>Name
+            <input @bind="_name" maxlength="@ProviderGroup.MaxNameLength" />
+        </label>
+        @if (_view.Type is { } type)
+        {
+            <fieldset>
+                <legend>Sync</legend>
+                @foreach (var kind in ResourceKinds.Split(type.SupportedResources))
+                {
+                    <label class="inline">
+                        <input type="checkbox" checked="@_enabled.HasFlag(kind)" @onchange="e => Toggle(kind, e.Value is true)" />
+                        @ResourceKinds.Label(kind)
+                    </label>
+                }
+                <span class="muted">Turning a kind off keeps its records here but stops refreshing them.</span>
+            </fieldset>
+            <fieldset>
+                <legend>Replace credentials (leave empty to keep)</legend>
+                @foreach (var field in type.CredentialFields)
+                {
+                    <label>@field.Label
+                        <input type="@(field.IsSecret ? "password" : "text")" autocomplete="off"
+                               value="@_credentials.GetValueOrDefault(field.Key)"
+                               @onchange="e => _credentials[field.Key] = e.Value?.ToString() ?? string.Empty" />
+                    </label>
+                }
+            </fieldset>
+        }
+        else
+        {
+            <p class="alert">Provider type '@group.ProviderType' is not available in this version.</p>
+        }
+        <div>
+            <button class="btn primary" disabled="@(_busy || string.IsNullOrWhiteSpace(_name))" @onclick="SaveAsync">Save</button>
+        </div>
+    </div>
+
+    @if (_message is not null)
+    {
+        <p class="@(_isError ? "alert" : "ok")">@_message</p>
+    }
+
+    <h2>Remove group</h2>
+    <p class="muted">
+        Stops managing this group: its servers and DNS zones disappear from this platform but keep running at the provider.
+        SSH keys of servers created here are deleted with them.
+    </p>
+    @if (_confirmRemove)
+    {
+        <div class="actions">
+            <button class="btn danger" disabled="@_busy" @onclick="RemoveAsync">Really remove “@group.Name”?</button>
+            <button class="btn" @onclick="() => _confirmRemove = false">Cancel</button>
+        </div>
+    }
+    else
+    {
+        <button class="btn danger" @onclick="() => _confirmRemove = true">Remove group</button>
+    }
+}
+
+@code {
+    private GroupView? _view;
+    private string _name = "";
+    private ResourceKind _enabled;
+    private Dictionary<string, string> _credentials = [];
+    private string? _message;
+    private bool _isError;
+    private bool _busy;
+    private bool _confirmRemove;
+
+    [Parameter] public Guid Id { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+        if (_view is not null)
+            (_name, _enabled) = (_view.Group.Name, _view.Group.EnabledResources);
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            _view = await Runner.RunAsync<GroupQueries, GroupView>(q => q.GetAsync(Id, CancellationToken.None));
+        }
+        catch (NotFoundException)
+        {
+            Navigation.NavigateTo("/groups");
+        }
+    }
+
+    private void Toggle(ResourceKind kind, bool on) => _enabled = on ? _enabled | kind : _enabled & ~kind;
+
+    private Task SyncNowAsync() => RunAsync(async () =>
+    {
+        var report = await Runner.RunAsync<SyncGroup, SyncReport>(u => u.ExecuteAsync(Id, CancellationToken.None));
+        (_message, _isError) = ($"Synced. {report}", !report.Succeeded);
+    });
+
+    private Task SaveAsync() => RunAsync(async () =>
+    {
+        var command = new UpdateProviderGroupCommand(Id, _name, _enabled, _credentials);
+        var report = await Runner.RunAsync<UpdateProviderGroup, SyncReport>(u => u.ExecuteAsync(command, CancellationToken.None));
+        _credentials = [];
+        (_message, _isError) = ($"Saved. {report}", !report.Succeeded);
+    });
+
+    private Task RemoveAsync() => RunAsync(async () =>
+    {
+        await Runner.RunAsync<RemoveProviderGroup>(u => u.ExecuteAsync(Id, CancellationToken.None));
+        Navigation.NavigateTo("/groups");
+    });
+
+    private async Task RunAsync(Func<Task> action)
+    {
+        _busy = true;
+        _message = null;
+        try
+        {
+            await action();
+            await LoadAsync();
+        }
+        catch (Exception ex) when (UserFacingErrors.Matches(ex))
+        {
+            (_message, _isError) = (ex.Message, true);
+        }
+        finally
+        {
+            _busy = false;
+            _confirmRemove = false;
+        }
+    }
+}

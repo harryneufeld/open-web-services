@@ -1,0 +1,79 @@
+@implements IDisposable
+@inject IChangeNotifier Notifier
+
+@*
+    Refreshes the parent page as soon as a matching resource is saved anywhere (a user action, the background
+    sync, an app install). Bursts are coalesced; a slow fallback poll covers anything that is not published.
+*@
+
+@code {
+    private static readonly TimeSpan Debounce = TimeSpan.FromMilliseconds(250);
+
+    private readonly CancellationTokenSource _cts = new();
+    private int _pending;
+
+    /// <summary>Topics from <see cref="ResourceTopics"/> to listen to.</summary>
+    [Parameter, EditorRequired] public string[] Topics { get; set; } = [];
+
+    /// <summary>Only react to changes of this resource id (for detail pages).</summary>
+    [Parameter] public Guid? Id { get; set; }
+
+    [Parameter, EditorRequired] public EventCallback OnChange { get; set; }
+
+    [Parameter] public int FallbackSeconds { get; set; } = 30;
+
+    protected override void OnInitialized()
+    {
+        Notifier.Changed += Handle;
+        _ = PollAsync();
+    }
+
+    private void Handle(ResourceChange change)
+    {
+        if (!Topics.Contains(change.Topic) || (Id is { } id && change.Id != id))
+            return;
+        if (Interlocked.Exchange(ref _pending, 1) == 0)
+            _ = RefreshAsync(Debounce);
+    }
+
+    private async Task PollAsync()
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(FallbackSeconds));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(_cts.Token))
+                await RefreshAsync(TimeSpan.Zero);
+        }
+        catch (OperationCanceledException)
+        {
+            // component disposed
+        }
+    }
+
+    private async Task RefreshAsync(TimeSpan delay)
+    {
+        try
+        {
+            if (delay > TimeSpan.Zero)
+                await Task.Delay(delay, _cts.Token);
+            Interlocked.Exchange(ref _pending, 0);
+            // EventCallback re-renders the parent page, not just this component.
+            await InvokeAsync(() => OnChange.InvokeAsync());
+        }
+        catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
+        {
+            // component disposed
+        }
+        catch (Exception ex)
+        {
+            await DispatchExceptionAsync(ex);
+        }
+    }
+
+    public void Dispose()
+    {
+        Notifier.Changed -= Handle;
+        _cts.Cancel();
+        _cts.Dispose();
+    }
+}

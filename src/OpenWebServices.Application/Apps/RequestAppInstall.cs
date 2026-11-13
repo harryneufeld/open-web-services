@@ -16,6 +16,8 @@ public sealed class RequestAppInstall(
         var server = await servers.FindAsync(serverId, ct) ?? throw new NotFoundException("Server");
         if (templates.Find(templateId) is null)
             throw new NotFoundException("App template");
+        if (server.EncryptedSshPrivateKey is null)
+            throw new DomainException("Apps can only be installed on servers created here; imported servers have no SSH key.");
         if (!server.IsReachable)
             throw new DomainException("The server must be running before apps can be installed.");
 

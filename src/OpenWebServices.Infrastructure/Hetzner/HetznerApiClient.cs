@@ -19,6 +19,11 @@ internal sealed class HetznerApiClient(HttpClient http, string token)
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     };
 
+    private static readonly JsonSerializerOptions JsonWithNulls = new(Json)
+    {
+        DefaultIgnoreCondition = JsonIgnoreCondition.Never,
+    };
+
     /// <summary>Reads every page of a list endpoint, e.g. <c>server_types</c>.</summary>
     public async Task<List<T>> GetAllAsync<T>(string path, string collection, CancellationToken ct)
     {
@@ -52,16 +57,24 @@ internal sealed class HetznerApiClient(HttpClient http, string token)
 
     public Task PostAsync(string path, CancellationToken ct) => SendAsync(HttpMethod.Post, path, null, ct);
 
+    /// <param name="includeNulls">Send null properties instead of omitting them, where null has a meaning.</param>
+    public Task PostAsync(string path, object payload, CancellationToken ct, bool includeNulls = false) =>
+        SendAsync(HttpMethod.Post, path, payload, ct, serializer: includeNulls ? JsonWithNulls : Json);
+
+    /// <summary>Performs a GET and discards the body; throws <see cref="ProviderException"/> on any error.</summary>
+    public Task GetRawAsync(string path, CancellationToken ct) => SendAsync(HttpMethod.Get, path, null, ct);
+
     public Task DeleteAsync(string path, CancellationToken ct) =>
         SendAsync(HttpMethod.Delete, path, null, ct, allowNotFound: true);
 
     private async Task<string?> SendAsync(
-        HttpMethod method, string path, object? payload, CancellationToken ct, bool allowNotFound = false)
+        HttpMethod method, string path, object? payload, CancellationToken ct, bool allowNotFound = false,
+        JsonSerializerOptions? serializer = null)
     {
         using var request = new HttpRequestMessage(method, path);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         if (payload is not null)
-            request.Content = JsonContent.Create(payload, options: Json);
+            request.Content = JsonContent.Create(payload, payload.GetType(), options: serializer ?? Json);
 
         try
         {
@@ -69,6 +82,8 @@ internal sealed class HetznerApiClient(HttpClient http, string token)
             var body = await response.Content.ReadAsStringAsync(ct);
             if (response.StatusCode == HttpStatusCode.NotFound && allowNotFound)
                 return null;
+            if (response.StatusCode == HttpStatusCode.Unauthorized)
+                throw new ProviderException("Hetzner rejected the API token (401). Check or replace it under Groups.");
             if (!response.IsSuccessStatusCode)
                 throw new ProviderException($"Hetzner API error ({(int)response.StatusCode}): {ReadErrorMessage(body)}");
             return body;
@@ -76,6 +91,10 @@ internal sealed class HetznerApiClient(HttpClient http, string token)
         catch (HttpRequestException ex)
         {
             throw new ProviderException("The Hetzner API could not be reached.", ex);
+        }
+        catch (TaskCanceledException ex) when (!ct.IsCancellationRequested)
+        {
+            throw new ProviderException("The Hetzner API did not respond in time.", ex);
         }
     }
 

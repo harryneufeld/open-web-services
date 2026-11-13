@@ -1,26 +1,33 @@
 using OpenWebServices.Application.Abstractions;
+using OpenWebServices.Domain.Providers;
 
 namespace OpenWebServices.Application.Offers;
 
-/// <summary>Collects offers from every configured provider, cheapest first.</summary>
-public sealed class GetServerOffers(IHostingProviderFactory providers)
+public sealed record OffersResult(IReadOnlyList<ServerOffer> Offers, IReadOnlyList<string> Errors);
+
+/// <summary>Collects offers from every group that manages servers, cheapest first.</summary>
+public sealed class GetServerOffers(IProviderGroupRepository groups, IProviderConnectionFactory connections)
 {
-    public async Task<IReadOnlyList<ServerOffer>> ExecuteAsync(CancellationToken ct)
+    public async Task<OffersResult> ExecuteAsync(CancellationToken ct)
     {
         var offers = new List<ServerOffer>();
-        foreach (var providerId in providers.ProviderIds)
+        var errors = new List<string>();
+        foreach (var group in (await groups.ListAsync(ct)).Where(g => g.IsEnabled(ResourceKind.Servers)))
         {
             try
             {
-                var provider = await providers.GetAsync(providerId, ct);
-                offers.AddRange(await provider.GetOffersAsync(ct));
+                var provider = (await connections.ConnectAsync(group.Id, ct)).RequireServers();
+                offers.AddRange((await provider.GetOffersAsync(ct))
+                    .Select(o => o with { GroupId = group.Id, GroupName = group.Name }));
             }
-            catch (ProviderNotConfiguredException)
+            catch (Exception ex) when (ex is ProviderException or ProviderNotConfiguredException or CapabilityNotSupportedException)
             {
-                // Providers without credentials simply offer nothing yet.
+                errors.Add($"{group.Name}: {ex.Message}");
             }
         }
 
-        return [.. offers.OrderBy(o => o.MonthlyNet).ThenBy(o => o.ProviderId).ThenBy(o => o.Location)];
+        return new OffersResult(
+            [.. offers.OrderBy(o => o.MonthlyNet).ThenBy(o => o.GroupName).ThenBy(o => o.Location)],
+            errors);
     }
 }

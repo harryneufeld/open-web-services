@@ -3,7 +3,7 @@ using OpenWebServices.Application.Abstractions;
 namespace OpenWebServices.Application.Servers;
 
 public sealed class DeleteServer(
-    IHostingProviderFactory providers,
+    IProviderConnectionFactory connections,
     IServerRepository servers,
     IUnitOfWork unitOfWork)
 {
@@ -15,12 +15,12 @@ public sealed class DeleteServer(
         await unitOfWork.SaveChangesAsync(ct);
 
         // Failures leave the record in Deleting state so the user can retry; nothing is orphaned silently.
-        if (server.ProviderServerId is not null || server.ProviderSshKeyId is not null)
+        if (server.ExternalId is not null || server.ExternalSshKeyId is not null)
         {
-            var provider = await providers.GetAsync(server.ProviderId, ct);
-            if (server.ProviderServerId is { } serverId1)
-                await provider.DeleteServerAsync(serverId1, ct);
-            if (server.ProviderSshKeyId is { } keyId)
+            var provider = (await connections.ConnectAsync(server.GroupId, ct)).RequireServers();
+            if (server.ExternalId is { } externalId)
+                await provider.DeleteServerAsync(externalId, ct);
+            if (server.ExternalSshKeyId is { } keyId)
                 await provider.DeleteSshKeyAsync(keyId, ct);
         }
 

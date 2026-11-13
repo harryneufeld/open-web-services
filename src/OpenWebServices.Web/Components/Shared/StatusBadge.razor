@@ -1,0 +1,12 @@
+@* A status pill; transitional states get a small spinner so pending actions are visible. *@
+<span class="badge @Css">@if (Busy)
+    {
+        <span class="spinner" aria-hidden="true"></span>
+    }@Text</span>
+
+@code {
+    [Parameter, EditorRequired] public string Text { get; set; } = "";
+    [Parameter] public bool Busy { get; set; }
+
+    private string Css => Text.ToLowerInvariant();
+}

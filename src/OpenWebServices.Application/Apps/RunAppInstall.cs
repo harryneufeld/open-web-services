@@ -41,7 +41,9 @@ public sealed class RunAppInstall(
 
     private async Task InstallAsync(AppInstall install, Server server, AppTemplate template, CancellationToken ct)
     {
-        var target = new RemoteTarget(server.PublicIpv4!, secrets.Unprotect(server.EncryptedSshPrivateKey));
+        if (server.EncryptedSshPrivateKey is null || server.PublicIpv4 is null)
+            throw new InvalidOperationException("The server has no SSH key or public IP.");
+        var target = new RemoteTarget(server.PublicIpv4, secrets.Unprotect(server.EncryptedSshPrivateKey));
         var directory = $"/opt/apps/{template.Id}";
 
         install.AppendLog("Waiting for SSH and server bootstrap (Docker)...");

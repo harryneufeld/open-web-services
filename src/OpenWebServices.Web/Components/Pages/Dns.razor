@@ -1,0 +1,108 @@
+@page "/dns"
+@rendermode InteractiveServer
+@inject UseCaseRunner Runner
+@inject NavigationManager Navigation
+
+<PageTitle>DNS</PageTitle>
+
+<h1>DNS zones</h1>
+
+<LiveUpdates Topics="[ResourceTopics.DnsZones, ResourceTopics.Groups]" OnChange="LoadAsync" />
+
+@if (_error is not null)
+{
+    <p class="alert">@_error</p>
+}
+
+@if (_zones is null)
+{
+    <p>Loading…</p>
+}
+else if (_zones.Count == 0)
+{
+    <p class="muted">No zones yet. Zones of groups with DNS enabled are imported automatically, or create one below.</p>
+}
+else
+{
+    <table>
+        <thead>
+            <tr><th>Domain</th><th>Group</th><th>Status</th><th class="num">Records</th><th>Delegation</th><th>Nameservers</th></tr>
+        </thead>
+        <tbody>
+            @foreach (var view in _zones)
+            {
+                var z = view.Zone;
+                <tr>
+                    <td><a href="/dns/@z.Id">@z.Name</a></td>
+                    <td>@view.GroupName <span class="muted">@view.ProviderName</span></td>
+                    <td><StatusBadge Text="@z.Status" /></td>
+                    <td class="num">@(z.RecordCount?.ToString() ?? "–")</td>
+                    <td>@(z.DelegationStatus ?? "–")</td>
+                    <td class="muted">@string.Join(", ", z.NameserverList)</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+<h2>Create a zone</h2>
+@if (_groups is { Count: 0 })
+{
+    <p class="muted">No group has DNS enabled. Turn it on under <a href="/groups">Groups</a>.</p>
+}
+else if (_groups is not null)
+{
+    <div class="form">
+        <label>Group
+            <select @bind="_groupId">
+                @foreach (var g in _groups)
+                {
+                    <option value="@g.Id">@g.Name</option>
+                }
+            </select>
+        </label>
+        <label>Domain
+            <input @bind="_domain" placeholder="example.com" />
+        </label>
+        <button class="btn primary" disabled="@(_busy || string.IsNullOrWhiteSpace(_domain))" @onclick="CreateAsync">Create zone</button>
+    </div>
+    <p class="muted">After creating a zone, point the domain's nameservers at the registrar to the ones shown for the zone.</p>
+}
+
+@code {
+    private IReadOnlyList<ZoneView>? _zones;
+    private IReadOnlyList<ProviderGroup>? _groups;
+    private Guid _groupId;
+    private string _domain = "";
+    private string? _error;
+    private bool _busy;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _zones = await Runner.RunAsync<DnsQueries, IReadOnlyList<ZoneView>>(q => q.ListZonesAsync(CancellationToken.None));
+        _groups = await Runner.RunAsync<DnsQueries, IReadOnlyList<ProviderGroup>>(q => q.ListDnsGroupsAsync(CancellationToken.None));
+        if (_groups.Count > 0 && _groups.All(g => g.Id != _groupId))
+            _groupId = _groups[0].Id;
+    }
+
+    private async Task CreateAsync()
+    {
+        _busy = true;
+        _error = null;
+        try
+        {
+            var id = await Runner.RunAsync<CreateDnsZone, Guid>(u => u.ExecuteAsync(_groupId, _domain, CancellationToken.None));
+            Navigation.NavigateTo($"/dns/{id}");
+        }
+        catch (Exception ex) when (UserFacingErrors.Matches(ex))
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

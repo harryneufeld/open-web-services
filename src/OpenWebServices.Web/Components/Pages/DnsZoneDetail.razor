@@ -1,0 +1,250 @@
+@page "/dns/{Id:guid}"
+@rendermode InteractiveServer
+@inject UseCaseRunner Runner
+@inject NavigationManager Navigation
+
+<PageTitle>@(_view?.Zone.Name ?? "DNS zone")</PageTitle>
+
+<LiveUpdates Topics="[ResourceTopics.DnsZones]" Id="Id" OnChange="LoadZoneAsync" />
+
+@if (_error is not null)
+{
+    <p class="alert">@_error</p>
+}
+
+@if (_view is null)
+{
+    <p>Loading…</p>
+}
+else
+{
+    var zone = _view.Zone;
+    <div class="page-head">
+        <h1>@zone.Name <StatusBadge Text="@zone.Status" /></h1>
+        <a href="/dns">← All zones</a>
+    </div>
+
+    <dl class="facts">
+        <dt>Group</dt><dd><a href="/groups/@zone.GroupId">@_view.GroupName</a> <span class="muted">@_view.ProviderName</span></dd>
+        <dt>Nameservers</dt><dd>@string.Join(", ", zone.NameserverList)</dd>
+        <dt>Delegation</dt><dd>@(zone.DelegationStatus ?? "–")</dd>
+        <dt>Default TTL</dt><dd>@(zone.Ttl?.ToString() ?? "–")</dd>
+    </dl>
+
+    <div class="page-head">
+        <h2>Records</h2>
+        <button class="btn" disabled="@_loadingRecords" @onclick="LoadRecordsAsync">
+            @if (_loadingRecords)
+            {
+                <span class="spinner"></span>
+            }
+            Reload
+        </button>
+    </div>
+
+    @if (_records is null)
+    {
+        <p><span class="spinner"></span> Loading records from the provider…</p>
+    }
+    else
+    {
+        <table>
+            <thead><tr><th>Name</th><th>Type</th><th>TTL</th><th>Values</th><th></th></tr></thead>
+            <tbody>
+                @foreach (var set in _records)
+                {
+                    <tr>
+                        <td>@set.Name</td>
+                        <td>@set.Type</td>
+                        <td>@(set.Ttl?.ToString() ?? "default")</td>
+                        <td class="values">@foreach (var value in set.Values)
+                            {
+                                <div>@value</div>
+                            }</td>
+                        <td class="row-actions">
+                            @if (set.IsManagedByProvider)
+                            {
+                                <span class="muted">managed by provider</span>
+                            }
+                            else if (_confirmDelete == set)
+                            {
+                                <button class="btn danger" disabled="@_busy" @onclick="() => DeleteRecordAsync(set)">Delete?</button>
+                                <button class="btn" @onclick="() => _confirmDelete = null">Cancel</button>
+                            }
+                            else
+                            {
+                                <button class="btn" disabled="@_busy" @onclick="() => Edit(set)">Edit</button>
+                                <button class="btn danger" disabled="@_busy" @onclick="() => _confirmDelete = set">Delete</button>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+
+    <h2>@(_editing is null ? "Add record set" : $"Edit {_editing.Name} {_editing.Type}")</h2>
+    <div class="form">
+        <label>Name
+            <input @bind="_recordName" placeholder="@@ or www" disabled="@(_editing is not null)" />
+        </label>
+        <label>Type
+            <select @bind="_recordType" disabled="@(_editing is not null)">
+                @foreach (var type in DnsRecords.SupportedTypes)
+                {
+                    <option value="@type">@type</option>
+                }
+            </select>
+        </label>
+        <label>TTL (seconds)
+            <input type="number" min="@DnsRecords.MinTtl" @bind="_recordTtl" placeholder="zone default" />
+        </label>
+    </div>
+    <div class="form stacked">
+        <label>Values, one per line
+            <textarea rows="4" @bind="_recordValues" placeholder="@ValuePlaceholder"></textarea>
+            <span class="muted">Zone-file format: MX as “10 mail.example.com.”, absolute names end with a dot. TXT values are quoted automatically.</span>
+        </label>
+        <div class="actions">
+            <button class="btn primary" disabled="@(_busy || string.IsNullOrWhiteSpace(_recordValues))" @onclick="SaveRecordAsync">
+                @(_editing is null ? "Add" : "Save")
+            </button>
+            @if (_editing is not null)
+            {
+                <button class="btn" @onclick="ResetForm">Cancel</button>
+            }
+        </div>
+    </div>
+
+    <h2>Delete zone</h2>
+    <p class="muted">Deletes the zone and all its records at the provider. Websites and mail using it stop resolving.</p>
+    @if (_confirmDeleteZone)
+    {
+        <div class="actions">
+            <button class="btn danger" disabled="@_busy" @onclick="DeleteZoneAsync">Really delete @zone.Name at the provider?</button>
+            <button class="btn" @onclick="() => _confirmDeleteZone = false">Cancel</button>
+        </div>
+    }
+    else
+    {
+        <button class="btn danger" @onclick="() => _confirmDeleteZone = true">Delete zone</button>
+    }
+}
+
+@code {
+    private ZoneView? _view;
+    private IReadOnlyList<DnsRecordSet>? _records;
+    private DnsRecordSet? _editing;
+    private DnsRecordSet? _confirmDelete;
+    private string _recordName = "@";
+    private string _recordType = "A";
+    private int? _recordTtl;
+    private string _recordValues = "";
+    private string? _error;
+    private bool _busy;
+    private bool _loadingRecords;
+    private bool _confirmDeleteZone;
+
+    [Parameter] public Guid Id { get; set; }
+
+    private string ValuePlaceholder => _recordType switch
+    {
+        "A" => "203.0.113.10",
+        "AAAA" => "2001:db8::1",
+        "CNAME" => "target.example.com.",
+        "MX" => "10 mail.example.com.",
+        "TXT" => "v=spf1 -all",
+        _ => "",
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadZoneAsync();
+        if (_view is not null)
+            await LoadRecordsAsync();
+    }
+
+    private async Task LoadZoneAsync()
+    {
+        try
+        {
+            _view = await Runner.RunAsync<DnsQueries, ZoneView>(q => q.GetZoneAsync(Id, CancellationToken.None));
+        }
+        catch (NotFoundException)
+        {
+            Navigation.NavigateTo("/dns");
+        }
+    }
+
+    private async Task LoadRecordsAsync()
+    {
+        _loadingRecords = true;
+        try
+        {
+            _records = await Runner.RunAsync<DnsRecords, IReadOnlyList<DnsRecordSet>>(u => u.ListAsync(Id, CancellationToken.None));
+        }
+        catch (Exception ex) when (UserFacingErrors.Matches(ex))
+        {
+            _error = ex.Message;
+            _records ??= [];
+        }
+        finally
+        {
+            _loadingRecords = false;
+        }
+    }
+
+    private void Edit(DnsRecordSet set)
+    {
+        _editing = set;
+        (_recordName, _recordType, _recordTtl) = (set.Name, set.Type, set.Ttl);
+        _recordValues = string.Join('\n', set.Values);
+    }
+
+    private void ResetForm()
+    {
+        _editing = null;
+        (_recordName, _recordType, _recordTtl, _recordValues) = ("@", "A", null, "");
+    }
+
+    private Task SaveRecordAsync() => RunAsync(async () =>
+    {
+        var values = _recordValues.Split('\n', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        var set = new DnsRecordSet(_recordName, _recordType, _recordTtl, values);
+        if (_editing is null)
+            await Runner.RunAsync<DnsRecords>(u => u.CreateAsync(Id, set, CancellationToken.None));
+        else
+            await Runner.RunAsync<DnsRecords>(u => u.UpdateAsync(Id, set, CancellationToken.None));
+        ResetForm();
+    });
+
+    private Task DeleteRecordAsync(DnsRecordSet set) =>
+        RunAsync(() => Runner.RunAsync<DnsRecords>(u => u.DeleteAsync(Id, set.Name, set.Type, CancellationToken.None)));
+
+    private Task DeleteZoneAsync() => RunAsync(async () =>
+    {
+        await Runner.RunAsync<DeleteDnsZone>(u => u.ExecuteAsync(Id, CancellationToken.None));
+        Navigation.NavigateTo("/dns");
+    });
+
+    private async Task RunAsync(Func<Task> action)
+    {
+        _busy = true;
+        _error = null;
+        try
+        {
+            await action();
+            await LoadRecordsAsync();
+        }
+        catch (Exception ex) when (UserFacingErrors.Matches(ex))
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+            _confirmDelete = null;
+            _confirmDeleteZone = false;
+        }
+    }
+}

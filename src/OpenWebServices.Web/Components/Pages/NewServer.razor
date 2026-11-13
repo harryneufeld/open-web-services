@@ -12,13 +12,18 @@
     <p class="alert">@_error</p>
 }
 
+@foreach (var groupError in _groupErrors)
+{
+    <p class="alert">@groupError</p>
+}
+
 @if (_offers is null)
 {
     <p>Loading offers…</p>
 }
 else if (_offers.Count == 0)
 {
-    <p class="muted">No offers available. Add a provider token under <a href="/settings">Settings</a> first.</p>
+    <p class="muted">No offers available. Add a provider group with servers enabled under <a href="/groups">Groups</a> first.</p>
 }
 else
 {
@@ -34,7 +39,7 @@ else
 
     <table>
         <thead>
-            <tr><th></th><th>Provider</th><th>Location</th><th>Type</th><th>vCPU</th><th>RAM</th><th>Disk</th><th class="num">Net / month</th><th class="num">Gross / month</th></tr>
+            <tr><th></th><th>Group</th><th>Location</th><th>Type</th><th>vCPU</th><th>RAM</th><th>Disk</th><th class="num">Net / month</th><th class="num">Gross / month</th></tr>
         </thead>
         <tbody>
             @foreach (var o in FilteredOffers)
@@ -42,7 +47,7 @@ else
                 <tr class="@(o.Key == _selectedKey ? "selected" : null) @(o.Available ? null : "unavailable")"
                     @onclick="() => Select(o)">
                     <td><input type="radio" name="offer" checked="@(o.Key == _selectedKey)" disabled="@(!o.Available)" /></td>
-                    <td>@o.ProviderId</td>
+                    <td>@o.GroupName</td>
                     <td>@o.LocationCity, @o.Country (@o.Location)</td>
                     <td>@o.TypeName <span class="muted">@o.CpuKind, @o.Architecture</span></td>
                     <td>@o.VCpus</td>
@@ -77,6 +82,7 @@ else
     private static readonly string[] Images = ["ubuntu-24.04", "ubuntu-22.04", "debian-12"];
 
     private IReadOnlyList<ServerOffer>? _offers;
+    private IReadOnlyList<string> _groupErrors = [];
     private string? _error;
     private string? _selectedKey;
     private string _name = "";
@@ -95,7 +101,8 @@ else
     {
         try
         {
-            _offers = await Runner.RunAsync<GetServerOffers, IReadOnlyList<ServerOffer>>(q => q.ExecuteAsync(CancellationToken.None));
+            var result = await Runner.RunAsync<GetServerOffers, OffersResult>(q => q.ExecuteAsync(CancellationToken.None));
+            (_offers, _groupErrors) = (result.Offers, result.Errors);
         }
         catch (Exception ex) when (UserFacingErrors.Matches(ex))
         {
@@ -119,7 +126,7 @@ else
         _error = null;
         try
         {
-            var command = new ProvisionServerCommand(_name.Trim(), offer.ProviderId, offer.Location, offer.TypeName, _image);
+            var command = new ProvisionServerCommand(offer.GroupId, _name.Trim(), offer.Location, offer.TypeName, _image);
             var id = await Runner.RunAsync<ProvisionServer, Guid>(u => u.ExecuteAsync(command, CancellationToken.None));
             Navigation.NavigateTo($"/servers/{id}");
         }

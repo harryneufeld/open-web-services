@@ -46,3 +46,18 @@ pre { overflow-x: auto; font-size: .85em; }
 .form.stacked { flex-direction: column; align-items: stretch; }
 .form.stacked input { width: 100%; }
 .logout { margin-left: auto; display: flex; gap: .75rem; align-items: center; }
+.badge.starting, .badge.stopping, .badge.provisioning, .badge.deleting, .badge.pending, .badge.installing { background: color-mix(in srgb, var(--primary) 20%, transparent); color: var(--primary); }
+.badge.ok { background: color-mix(in srgb, var(--ok) 25%, transparent); color: var(--ok); }
+.badge.stopped { background: var(--border); color: var(--muted); }
+.tag { display: inline-block; padding: 0 .4rem; margin-left: .35rem; border: 1px solid var(--border); border-radius: 4px; font-size: .75em; color: var(--muted); }
+td > .tag:first-child { margin-left: 0; margin-right: .35rem; }
+.spinner { display: inline-block; width: .75em; height: .75em; margin-right: .35em; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin .8s linear infinite; vertical-align: -.1em; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 2.4s; } }
+.form.narrow { max-width: 32rem; }
+fieldset { border: 1px solid var(--border); border-radius: 6px; display: flex; flex-direction: column; gap: .4rem; padding: .5rem .75rem .75rem; }
+legend { font-size: .9em; color: var(--muted); padding: 0 .25rem; }
+textarea { padding: .45rem .6rem; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); font: .9em ui-monospace, monospace; width: 100%; }
+td.values { white-space: normal; font-family: ui-monospace, monospace; font-size: .85em; max-width: 32rem; overflow-wrap: anywhere; }
+td.row-actions { text-align: right; }
+td.row-actions .btn { padding: .2rem .55rem; font-size: .85em; }

@@ -6,6 +6,7 @@ using OpenWebServices.Application.Abstractions;
 using OpenWebServices.Infrastructure.Background;
 using OpenWebServices.Infrastructure.Hetzner;
 using OpenWebServices.Infrastructure.Persistence;
+using OpenWebServices.Infrastructure.Providers;
 using OpenWebServices.Infrastructure.Security;
 using OpenWebServices.Infrastructure.Ssh;
 using OpenWebServices.Infrastructure.Templates;
@@ -26,8 +27,6 @@ public static class DependencyInjection
         services.AddDataProtection()
             .SetApplicationName("open-web-services")
             .PersistKeysToFileSystem(new DirectoryInfo(keysPath));
-        services.AddHttpClient(HostingProviderFactory.HetznerHttpClientName,
-            client => client.BaseAddress = new Uri(HetznerBaseAddress));
 
         services.AddSingleton<IClock, SystemClock>();
         services.AddSingleton<ISshKeyGenerator, RsaSshKeyGenerator>();
@@ -35,15 +34,30 @@ public static class DependencyInjection
         services.AddSingleton<IAppTemplateCatalog, BuiltInAppTemplateCatalog>();
         services.AddSingleton<ISecretProtector, DataProtectionSecretProtector>();
         services.AddSingleton<IPasswordHasher, Pbkdf2PasswordHasher>();
-        services.AddScoped<IAdminUserRepository, AdminUserRepository>();
+        services.AddSingleton<IChangeNotifier, InProcessChangeNotifier>();
+        services.AddSingleton<SyncScheduler>();
+        services.AddSingleton<ISyncScheduler>(sp => sp.GetRequiredService<SyncScheduler>());
+
+        // Provider plug-ins: one IProviderConnector per provider type.
+        services.AddHttpClient(HetznerConnector.HttpClientName, client =>
+        {
+            client.BaseAddress = new Uri(HetznerBaseAddress);
+            client.Timeout = TimeSpan.FromSeconds(30);
+        });
+        services.AddSingleton<IProviderConnector, HetznerConnector>();
+
+        services.AddSingleton<ProviderCatalog>();
+        services.AddSingleton<IProviderCatalog>(sp => sp.GetRequiredService<ProviderCatalog>());
+        services.AddScoped<IProviderConnectionFactory, ProviderConnectionFactory>();
 
         services.AddScoped<IUnitOfWork, EfUnitOfWork>();
+        services.AddScoped<IAdminUserRepository, AdminUserRepository>();
+        services.AddScoped<IProviderGroupRepository, ProviderGroupRepository>();
         services.AddScoped<IServerRepository, ServerRepository>();
+        services.AddScoped<IDnsZoneRepository, DnsZoneRepository>();
         services.AddScoped<IAppInstallRepository, AppInstallRepository>();
-        services.AddScoped<IProviderAccountRepository, ProviderAccountRepository>();
-        services.AddScoped<IHostingProviderFactory, HostingProviderFactory>();
 
-        services.AddHostedService<ServerSyncWorker>();
+        services.AddHostedService<GroupSyncWorker>();
         services.AddHostedService<AppInstallWorker>();
         return services;
     }

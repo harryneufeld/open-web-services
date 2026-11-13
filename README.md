@@ -1,17 +1,29 @@
 # Open Web Services
 
-Provider-independent cloud platform. MVP: create and manage Hetzner servers, install Docker-based apps.
+Provider-independent cloud platform. MVP: manage Hetzner Cloud servers and DNS zones, install Docker-based apps.
 
 ## Architecture (dependencies point inward)
 
 ```
 Web (Blazor Server, composition root)
   -> Infrastructure (EF Core/PostgreSQL, Hetzner API client, SSH.NET, background workers)
-       -> Application (use cases + ports: IHostingProvider, IRemoteShell, repositories)
-            -> Domain (Server, AppInstall, ProviderAccount; no dependencies)
+       -> Application (use cases + ports: IProviderConnector, IServerProvider, IDnsProvider, IRemoteShell, repositories)
+            -> Domain (ProviderGroup, Server, DnsZone, AppInstall; no dependencies)
 ```
 
-Adding a provider = implement `IHostingProvider` in Infrastructure and register it in `HostingProviderFactory`.
+### Provider groups
+
+A **group** is one set of credentials at one provider (a Hetzner Cloud project token, later e.g. an AWS account or an
+OVH application). Every resource belongs to a group. A provider type declares which resource kinds it supports
+(`ResourceKind`: servers, DNS) and which credential fields it needs; each group chooses which kinds to sync.
+Adding a group verifies the credentials and imports existing resources. A background worker re-syncs every group
+every 60 s, every 3 s while a server changes state, and immediately after actions. Pages refresh as soon as data
+changes (in-process notifications over the Blazor circuit).
+
+Adding a provider = implement `IProviderConnector` (returns an `IProviderConnection` exposing `IServerProvider` and/or
+`IDnsProvider`) in Infrastructure and register it in `DependencyInjection`. The UI builds its forms from the
+connector's `ProviderTypeInfo`. A new resource kind = a `ResourceKind` flag, a capability interface, and an
+`IResourceSync` implementation.
 
 ## Run locally
 
@@ -20,7 +32,7 @@ docker compose up -d db
 dotnet run --project src/OpenWebServices.Web
 ```
 
-Open the app, add a Hetzner API token under Settings, then create a server. Migrations are applied at startup.
+Open the app, add a provider group under Groups (existing servers and DNS zones are imported), then create servers or zones. Migrations are applied at startup.
 
 ## Tests
 

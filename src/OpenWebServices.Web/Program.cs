@@ -23,9 +23,12 @@ builder.Services
         options.Cookie.Name = "ows.auth";
         options.Cookie.HttpOnly = true;
         options.Cookie.SameSite = SameSiteMode.Strict;
-        options.Cookie.SecurePolicy = builder.Environment.IsDevelopment()
-            ? CookieSecurePolicy.SameAsRequest
-            : CookieSecurePolicy.Always;
+        // "Always" (default outside Development) needs HTTPS. Set Authentication:AllowInsecureCookie=true
+        // only for plain-HTTP use on a trusted LAN.
+        options.Cookie.SecurePolicy =
+            builder.Environment.IsDevelopment() || builder.Configuration.GetValue<bool>("Authentication:AllowInsecureCookie")
+                ? CookieSecurePolicy.SameAsRequest
+                : CookieSecurePolicy.Always;
         options.ExpireTimeSpan = TimeSpan.FromHours(8);
         options.SlidingExpiration = true;
     });

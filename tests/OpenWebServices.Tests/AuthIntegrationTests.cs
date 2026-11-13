@@ -65,6 +65,22 @@ public sealed partial class AuthIntegrationTests : IDisposable
         Assert.Equal(HttpStatusCode.OK, (await _client.GetAsync("/")).StatusCode);
     }
 
+    [Theory]
+    [InlineData("/", "Servers")]
+    [InlineData("/servers/new", "New server")]
+    [InlineData("/groups", "Provider groups")]
+    [InlineData("/settings", "Provider groups")]
+    [InlineData("/dns", "DNS zones")]
+    public async Task Main_pages_render_for_a_signed_in_admin(string path, string heading)
+    {
+        await PostFormAsync("/setup", "/auth/setup", ("username", "admin"), ("password", StrongPassword));
+
+        var response = await _client.GetAsync(path);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Contains($"<h1>{heading}</h1>", await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task Setup_rejects_short_passwords()
     {
