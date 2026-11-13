@@ -10,7 +10,7 @@ public class AppInstallTests
     [Fact]
     public void Successful_lifecycle_ends_installed()
     {
-        var install = AppInstall.Request(Guid.NewGuid(), "nginx", Now);
+        var install = AppInstall.Request(TestData.TenantId, Guid.NewGuid(), "nginx", Now);
 
         install.Start();
         install.AppendLog("done");
@@ -24,7 +24,7 @@ public class AppInstallTests
     [Fact]
     public void Failure_is_written_to_log()
     {
-        var install = AppInstall.Request(Guid.NewGuid(), "nginx", Now);
+        var install = AppInstall.Request(TestData.TenantId, Guid.NewGuid(), "nginx", Now);
         install.Start();
 
         install.Fail("boom", Now);
@@ -36,7 +36,7 @@ public class AppInstallTests
     [Fact]
     public void Cannot_start_twice()
     {
-        var install = AppInstall.Request(Guid.NewGuid(), "nginx", Now);
+        var install = AppInstall.Request(TestData.TenantId, Guid.NewGuid(), "nginx", Now);
         install.Start();
 
         Assert.Throws<DomainException>(install.Start);
@@ -45,7 +45,7 @@ public class AppInstallTests
     [Fact]
     public void Cannot_complete_before_start()
     {
-        var install = AppInstall.Request(Guid.NewGuid(), "nginx", Now);
+        var install = AppInstall.Request(TestData.TenantId, Guid.NewGuid(), "nginx", Now);
 
         Assert.Throws<DomainException>(() => install.Complete(Now));
     }

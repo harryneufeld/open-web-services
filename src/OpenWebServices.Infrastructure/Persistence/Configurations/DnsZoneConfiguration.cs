@@ -19,5 +19,6 @@ internal sealed class DnsZoneConfiguration : IEntityTypeConfiguration<DnsZone>
         builder.Ignore(z => z.NameserverList);
         builder.HasOne<ProviderGroup>().WithMany().HasForeignKey(z => z.GroupId).OnDelete(DeleteBehavior.Cascade);
         builder.HasIndex(z => new { z.GroupId, z.ExternalId }).IsUnique();
+        builder.HasIndex(z => z.TenantId);
     }
 }

@@ -1,14 +1,17 @@
 using OpenWebServices.Application.Abstractions;
+using OpenWebServices.Domain.Tenants;
 
 namespace OpenWebServices.Application.Servers;
 
 public sealed class DeleteServer(
+    AccessContext access,
     IProviderConnectionFactory connections,
     IServerRepository servers,
     IUnitOfWork unitOfWork)
 {
     public async Task ExecuteAsync(Guid serverId, CancellationToken ct)
     {
+        access.Require(TenantRole.Member);
         var server = await servers.FindAsync(serverId, ct) ?? throw new NotFoundException("Server");
 
         server.MarkDeleting();

@@ -15,11 +15,22 @@ public interface IUnitOfWork
     Task SaveChangesAsync(CancellationToken ct);
 }
 
-/// <summary>Encrypts secrets (API tokens, private keys) before they are persisted.</summary>
+/// <summary>
+/// Encrypts secrets (API tokens, private keys) before they are persisted. Every secret is bound to its tenant and
+/// purpose: a ciphertext copied to another tenant's row or another field cannot be decrypted there.
+/// </summary>
 public interface ISecretProtector
 {
-    string Protect(string plainText);
-    string Unprotect(string protectedText);
+    string Protect(string plainText, Guid tenantId, string purpose);
+
+    /// <exception cref="System.Security.Cryptography.CryptographicException">Wrong tenant, purpose or key.</exception>
+    string Unprotect(string protectedText, Guid tenantId, string purpose);
+}
+
+public static class SecretPurposes
+{
+    public const string ProviderCredentials = "provider-credentials";
+    public const string SshPrivateKey = "ssh-private-key";
 }
 
 public interface ISshKeyGenerator

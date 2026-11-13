@@ -1,0 +1,248 @@
+@page "/tenant"
+@rendermode InteractiveServer
+@inject UseCaseRunner Runner
+@inject NavigationManager Navigation
+
+<PageTitle>Members · ows</PageTitle>
+
+<header class="page-header">
+    <div>
+        <span class="svc-line"><ServiceBadge Service="OwsService.Groups" /><b>@OwsService.Groups.Name</b><span class="tagline"> · @OwsService.Groups.Tagline</span></span>
+        <h1>Members</h1>
+        <p>Who can use <b>@_details?.Tenant.Name</b>, and with which role.</p>
+    </div>
+</header>
+
+@if (_message is not null)
+{
+    <Notice Kind="@(_isError ? "error" : "success")">@_message</Notice>
+}
+
+@if (_details is null)
+{
+    <section class="panel"><SkeletonRows /></section>
+}
+else
+{
+    var canManage = _details.MyRole >= TenantRole.Admin;
+    var isOwner = _details.MyRole == TenantRole.Owner;
+
+    <section class="panel" aria-labelledby="members">
+        <div class="panel-header"><div><h2 id="members">Members</h2><p>@_details.Members.Count @(_details.Members.Count == 1 ? "person" : "people")</p></div></div>
+        <div class="table-wrap">
+            <table class="stack">
+                <thead><tr><th>User</th><th>Role</th><th>Second factor</th><th>Joined</th><th><span class="sr-only">Actions</span></th></tr></thead>
+                <tbody>
+                    @foreach (var member in _details.Members)
+                    {
+                        var isMe = member.UserId == _myId;
+                        var editable = canManage && !isMe && (isOwner || member.Role != TenantRole.Owner);
+                        <tr>
+                            <td>@member.UserName @if (isMe) { <span class="tag">You</span> }</td>
+                            <td data-label="Role">
+                                @if (editable)
+                                {
+                                    <select aria-label="Role of @member.UserName" value="@member.Role" disabled="@_busy"
+                                            @onchange="e => ChangeRoleAsync(member, e.Value?.ToString())">
+                                        @foreach (var role in TenantRoles.All.Where(r => isOwner || r != TenantRole.Owner))
+                                        {
+                                            <option value="@role">@role</option>
+                                        }
+                                    </select>
+                                }
+                                else
+                                {
+                                    @member.Role
+                                }
+                            </td>
+                            <td data-label="Second factor"><StatusBadge Text="@(member.HasSecondFactor ? "On" : "Off")" /></td>
+                            <td data-label="Joined">@member.JoinedAtUtc.ToString("yyyy-MM-dd")</td>
+                            <td class="num">
+                                @if (_confirmRemove == member.UserId)
+                                {
+                                    <span class="actions">
+                                        <button class="btn btn-sm" @onclick="() => _confirmRemove = null">Cancel</button>
+                                        <button class="btn btn-sm btn-danger-solid" disabled="@_busy" @onclick="() => RemoveAsync(member)">@(isMe ? "Leave" : "Remove")</button>
+                                    </span>
+                                }
+                                else if (editable || isMe)
+                                {
+                                    <button class="btn btn-ghost btn-sm" @onclick="() => _confirmRemove = member.UserId">@(isMe ? "Leave…" : "Remove…")</button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    @if (canManage)
+    {
+        <section class="panel" aria-labelledby="invite">
+            <div class="panel-header"><div><h2 id="invite">Invite someone</h2><p>Creates a single-use link, valid for 7 days. Send it over a channel you trust.</p></div></div>
+            <div class="panel-body form-grid">
+                <label class="field"><span>Role</span>
+                    <select @bind="_inviteRole">
+                        @foreach (var role in TenantRoles.All.Where(r => isOwner || r != TenantRole.Owner))
+                        {
+                            <option value="@role">@role: @TenantRoles.Describe(role)</option>
+                        }
+                    </select>
+                </label>
+                <label class="field"><span>For</span><input @bind="_inviteNote" maxlength="@TenantInvitation.MaxNoteLength" placeholder="Name or e-mail, so you recognize it later" /></label>
+            </div>
+            @if (_inviteLink is not null)
+            {
+                <div class="panel-body">
+                    <Notice Kind="success">
+                        Invitation link (shown once):
+                        <code class="mono secret">@_inviteLink</code>
+                    </Notice>
+                </div>
+            }
+            <div class="panel-footer">
+                <button class="btn btn-primary" disabled="@_busy" @onclick="InviteAsync"><Icon Name="plus" />Create invitation link</button>
+            </div>
+            @if (_details.Invitations.Count > 0)
+            {
+                <div class="table-wrap">
+                    <table class="stack">
+                        <thead><tr><th>For</th><th>Role</th><th>Expires</th><th><span class="sr-only">Actions</span></th></tr></thead>
+                        <tbody>
+                            @foreach (var invitation in _details.Invitations)
+                            {
+                                <tr>
+                                    <td>@(string.IsNullOrEmpty(invitation.Note) ? "–" : invitation.Note)</td>
+                                    <td data-label="Role">@invitation.Role</td>
+                                    <td data-label="Expires">@invitation.ExpiresAtUtc.ToString("yyyy-MM-dd HH:mm") UTC</td>
+                                    <td class="num">
+                                        @if (isOwner || invitation.Role != TenantRole.Owner)
+                                        {
+                                            <button class="btn btn-ghost btn-sm" disabled="@_busy" @onclick="() => RevokeAsync(invitation.Id)">Revoke</button>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </section>
+    }
+
+    @if (isOwner)
+    {
+        <section class="panel" aria-labelledby="settings">
+            <div class="panel-header"><div><h2 id="settings">Tenant settings</h2></div></div>
+            <div class="panel-body form-stack">
+                <label class="field"><span>Name</span><input @bind="_name" maxlength="@Tenant.MaxNameLength" /></label>
+                <label class="check">
+                    <input type="checkbox" @bind="_requireTwoFactor" />
+                    Require a second factor: members must sign in with an authenticator code or a passkey to work here.
+                </label>
+            </div>
+            <div class="panel-footer">
+                <button class="btn btn-primary" disabled="@_busy" @onclick="SaveSettingsAsync">Save settings</button>
+            </div>
+        </section>
+    }
+}
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    private TenantDetails? _details;
+    private Guid? _myId;
+    private Guid? _confirmRemove;
+    private TenantRole _inviteRole = TenantRole.Member;
+    private string _inviteNote = "";
+    private string? _inviteLink;
+    private string _name = "";
+    private bool _requireTwoFactor;
+    private bool _busy;
+    private string? _message;
+    private bool _isError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _myId = Sessions.UserId((await AuthenticationState).User);
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            _details = await Runner.RunAsync<TenantQueries, TenantDetails>(q => q.GetCurrentAsync(CancellationToken.None));
+            _name = _details.Tenant.Name;
+            _requireTwoFactor = _details.Tenant.RequireTwoFactor;
+        }
+        catch (Exception ex) when (UserFacingErrors.Matches(ex))
+        {
+            Show(ex.Message, isError: true);
+        }
+    }
+
+    private Task ChangeRoleAsync(MemberView member, string? value) =>
+        Enum.TryParse<TenantRole>(value, out var role)
+            ? RunAsync(r => r.RunAsync<ChangeMemberRole>(u => u.ExecuteAsync(member.UserId, role, CancellationToken.None)),
+                $"{member.UserName} is now {role}.")
+            : Task.CompletedTask;
+
+    private async Task RemoveAsync(MemberView member)
+    {
+        var leaving = member.UserId == _myId;
+        await RunAsync(r => r.RunAsync<RemoveMember>(u => u.ExecuteAsync(member.UserId, CancellationToken.None)),
+            leaving ? "You left the tenant." : $"{member.UserName} was removed.");
+        _confirmRemove = null;
+        if (leaving && !_isError)
+            Navigation.NavigateTo("/", forceLoad: true);
+    }
+
+    private async Task InviteAsync()
+    {
+        string? token = null;
+        await RunAsync(async r => token = await r.RunAsync<CreateInvitation, string>(u => u.ExecuteAsync(_inviteRole, _inviteNote, CancellationToken.None)), null);
+        if (token is not null)
+        {
+            _inviteLink = Navigation.ToAbsoluteUri($"/invite/{token}").ToString();
+            _inviteNote = "";
+        }
+    }
+
+    private Task RevokeAsync(Guid invitationId) =>
+        RunAsync(r => r.RunAsync<RevokeInvitation>(u => u.ExecuteAsync(invitationId, CancellationToken.None)), "Invitation revoked.");
+
+    private Task SaveSettingsAsync() =>
+        RunAsync(r => r.RunAsync<UpdateTenantSettings>(u => u.ExecuteAsync(_name, _requireTwoFactor, CancellationToken.None)), "Settings saved.");
+
+    private async Task RunAsync(Func<UseCaseRunner, Task> action, string? success)
+    {
+        _busy = true;
+        try
+        {
+            await action(Runner);
+            if (success is not null)
+                Show(success, isError: false);
+            else
+                _message = null;
+            await LoadAsync();
+        }
+        catch (Exception ex) when (UserFacingErrors.Matches(ex))
+        {
+            Show(ex.Message, isError: true);
+            await LoadAsync();
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private void Show(string message, bool isError)
+    {
+        _message = message;
+        _isError = isError;
+    }
+}

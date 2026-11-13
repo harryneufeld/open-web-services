@@ -28,6 +28,7 @@ internal sealed class ServerConfiguration : IEntityTypeConfiguration<Server>
         builder.Ignore(s => s.IsTransitioning);
         builder.HasOne<ProviderGroup>().WithMany().HasForeignKey(s => s.GroupId).OnDelete(DeleteBehavior.Cascade);
         builder.HasIndex(s => s.Status);
+        builder.HasIndex(s => s.TenantId);
         builder.HasIndex(s => new { s.GroupId, s.ExternalId });
     }
 }

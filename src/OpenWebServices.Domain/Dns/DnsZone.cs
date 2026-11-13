@@ -11,6 +11,7 @@ public sealed partial class DnsZone
     private DnsZone() { } // EF Core
 
     public Guid Id { get; private set; }
+    public Guid TenantId { get; private set; }
     public Guid GroupId { get; private set; }
     public string ExternalId { get; private set; } = "";
     public string Name { get; private set; } = "";
@@ -28,16 +29,17 @@ public sealed partial class DnsZone
     public IReadOnlyList<string> NameserverList =>
         Nameservers.Length == 0 ? [] : Nameservers.Split(',');
 
-    public static DnsZone Track(Guid groupId, string externalId, string name, DateTime nowUtc)
+    public static DnsZone Track(Guid tenantId, Guid groupId, string externalId, string name, DateTime nowUtc)
     {
-        if (groupId == Guid.Empty)
-            throw new DomainException("A provider group is required.");
+        if (tenantId == Guid.Empty || groupId == Guid.Empty)
+            throw new DomainException("A tenant and a provider group are required.");
         if (string.IsNullOrWhiteSpace(externalId))
             throw new DomainException("A provider zone id is required.");
 
         return new DnsZone
         {
             Id = Guid.NewGuid(),
+            TenantId = tenantId,
             GroupId = groupId,
             ExternalId = externalId,
             Name = NormalizeName(name),

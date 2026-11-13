@@ -5,8 +5,8 @@
     }@Label</span>
 
 @code {
-    private static readonly HashSet<string> Ok = ["running", "ok", "installed", "valid"];
-    private static readonly HashSet<string> Danger = ["failed", "error", "invalid"];
+    private static readonly HashSet<string> Ok = ["running", "ok", "installed", "valid", "on", "active"];
+    private static readonly HashSet<string> Danger = ["failed", "error", "invalid", "locked"];
     private static readonly HashSet<string> Busy = ["provisioning", "starting", "stopping", "deleting", "pending", "installing", "updating"];
 
     [Parameter, EditorRequired] public string Text { get; set; } = "";

@@ -1,12 +1,15 @@
 using OpenWebServices.Application.Abstractions;
 using OpenWebServices.Application.Servers;
+using OpenWebServices.Domain.Providers;
 using OpenWebServices.Domain.Servers;
+using OpenWebServices.Domain.Tenants;
 
 namespace OpenWebServices.Tests;
 
 public class ProvisionServerTests
 {
-    private static readonly Guid GroupId = Guid.NewGuid();
+    private static readonly ProviderGroup Group = TestData.Group();
+    private static readonly Guid GroupId = Group.Id;
 
     private readonly FakeConnection _connection = new();
     private readonly InMemoryServerRepository _servers = new();
@@ -15,7 +18,10 @@ public class ProvisionServerTests
 
     private FakeServerProvider Provider => _connection.ServerProvider;
 
+    private readonly InMemoryGroupRepository _groups = new() { Items = { Group } };
+
     private ProvisionServer CreateSut() => new(
+        TestData.Access(TenantRole.Member), _groups,
         new FakeConnectionFactory(_connection), _servers, new FakeKeyGenerator(),
         new ReversingSecretProtector(), _scheduler, _unitOfWork, new FakeClock());
 

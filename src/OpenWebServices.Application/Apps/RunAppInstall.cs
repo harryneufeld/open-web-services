@@ -43,7 +43,7 @@ public sealed class RunAppInstall(
     {
         if (server.EncryptedSshPrivateKey is null || server.PublicIpv4 is null)
             throw new InvalidOperationException("The server has no SSH key or public IP.");
-        var target = new RemoteTarget(server.PublicIpv4, secrets.Unprotect(server.EncryptedSshPrivateKey));
+        var target = new RemoteTarget(server.PublicIpv4, secrets.Unprotect(server.EncryptedSshPrivateKey, server.TenantId, SecretPurposes.SshPrivateKey));
         var directory = $"/opt/apps/{template.Id}";
 
         install.AppendLog("Waiting for SSH and server bootstrap (Docker)...");

@@ -28,7 +28,7 @@ public sealed class ServerInventorySync(IServerRepository servers, IClock clock)
             else if (!IsBeingProvisioned(local, observed))
             {
                 servers.Add(Server.Import(
-                    group.Id, observed.ExternalId, observed.Name, observed.State, observed.Ipv4, observed.Location,
+                    group.TenantId, group.Id, observed.ExternalId, observed.Name, observed.State, observed.Ipv4, observed.Location,
                     observed.TypeName, observed.Image, observed.MonthlyNet, observed.Currency, clock.UtcNow));
                 added++;
             }
@@ -74,7 +74,7 @@ public sealed class DnsZoneInventorySync(IDnsZoneRepository zones, IClock clock)
         {
             if (!local.TryGetValue(observed.ExternalId, out var zone))
             {
-                zone = DnsZone.Track(group.Id, observed.ExternalId, observed.Name, clock.UtcNow);
+                zone = DnsZone.Track(group.TenantId, group.Id, observed.ExternalId, observed.Name, clock.UtcNow);
                 zones.Add(zone);
                 added++;
             }

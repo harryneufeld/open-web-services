@@ -1,5 +1,6 @@
 using OpenWebServices.Application.Abstractions;
 using OpenWebServices.Domain;
+using OpenWebServices.Domain.Tenants;
 
 namespace OpenWebServices.Application.Servers;
 
@@ -8,6 +9,7 @@ namespace OpenWebServices.Application.Servers;
 /// quickly until the provider reports the new state.
 /// </summary>
 public sealed class ControlServerPower(
+    AccessContext access,
     IProviderConnectionFactory connections,
     IServerRepository servers,
     ISyncScheduler syncScheduler,
@@ -16,6 +18,7 @@ public sealed class ControlServerPower(
 {
     public async Task ExecuteAsync(Guid serverId, PowerAction action, CancellationToken ct)
     {
+        access.Require(TenantRole.Member);
         var server = await servers.FindAsync(serverId, ct) ?? throw new NotFoundException("Server");
         if (server.ExternalId is null)
             throw new DomainException("The server has not been created at the provider yet.");

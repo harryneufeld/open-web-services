@@ -16,6 +16,7 @@ public sealed partial class Server
     private Server() { } // EF Core
 
     public Guid Id { get; private set; }
+    public Guid TenantId { get; private set; }
     public Guid GroupId { get; private set; }
     public string Name { get; private set; } = "";
     public ServerOrigin Origin { get; private set; }
@@ -34,6 +35,7 @@ public sealed partial class Server
     public DateTime? PendingSinceUtc { get; private set; }
 
     public static Server Provision(
+        Guid tenantId,
         Guid groupId,
         string name,
         string location,
@@ -48,7 +50,7 @@ public sealed partial class Server
             throw new DomainException("Server name must be 1-63 characters: lowercase letters, digits and hyphens, not starting or ending with a hyphen.");
         RequireText(encryptedSshPrivateKey, nameof(encryptedSshPrivateKey));
 
-        var server = Create(groupId, name, location, serverType, image, monthlyPriceNet, currency, nowUtc);
+        var server = Create(tenantId, groupId, name, location, serverType, image, monthlyPriceNet, currency, nowUtc);
         server.Origin = ServerOrigin.Created;
         server.EncryptedSshPrivateKey = encryptedSshPrivateKey;
         server.Status = ServerStatus.Provisioning;
@@ -57,6 +59,7 @@ public sealed partial class Server
 
     /// <summary>Starts tracking a server that already exists at the provider.</summary>
     public static Server Import(
+        Guid tenantId,
         Guid groupId,
         string externalId,
         string name,
@@ -74,7 +77,7 @@ public sealed partial class Server
         if (trimmed.Length is 0 or > MaxNameLength)
             throw new DomainException($"Server name must be 1-{MaxNameLength} characters.");
 
-        var server = Create(groupId, trimmed, location, serverType, image, monthlyPriceNet, currency, nowUtc);
+        var server = Create(tenantId, groupId, trimmed, location, serverType, image, monthlyPriceNet, currency, nowUtc);
         server.Origin = ServerOrigin.Imported;
         server.ExternalId = externalId;
         server.Status = ServerStatus.Stopped; // an unknown provider state shows as stopped rather than "busy" forever
@@ -83,11 +86,11 @@ public sealed partial class Server
     }
 
     private static Server Create(
-        Guid groupId, string name, string location, string serverType, string image,
+        Guid tenantId, Guid groupId, string name, string location, string serverType, string image,
         decimal monthlyPriceNet, string currency, DateTime nowUtc)
     {
-        if (groupId == Guid.Empty)
-            throw new DomainException("A provider group is required.");
+        if (tenantId == Guid.Empty || groupId == Guid.Empty)
+            throw new DomainException("A tenant and a provider group are required.");
         RequireText(location, nameof(location));
         RequireText(serverType, nameof(serverType));
         if (monthlyPriceNet < 0)
@@ -96,6 +99,7 @@ public sealed partial class Server
         return new Server
         {
             Id = Guid.NewGuid(),
+            TenantId = tenantId,
             GroupId = groupId,
             Name = name,
             Location = location,
@@ -120,6 +124,15 @@ public sealed partial class Server
         ExternalId = externalId;
         ExternalSshKeyId = externalSshKeyId;
         PublicIpv4 = ipv4;
+    }
+
+    /// <summary>Stores the same private key re-encrypted, e.g. after a change of encryption format.</summary>
+    public void ReplaceSshPrivateKey(string encryptedSshPrivateKey)
+    {
+        if (EncryptedSshPrivateKey is null)
+            throw new DomainException("This server has no SSH key.");
+        RequireText(encryptedSshPrivateKey, nameof(encryptedSshPrivateKey));
+        EncryptedSshPrivateKey = encryptedSshPrivateKey;
     }
 
     /// <summary>Optimistically shows a power action as in progress until the provider confirms the new state.</summary>

@@ -48,7 +48,7 @@ internal sealed class GroupSyncWorker(
         var requested = scheduler.TakeRequested();
         List<Guid> groupIds;
         IReadOnlyList<Guid> busy;
-        await using (var scope = scopes.CreateAsyncScope())
+        await using (var scope = scopes.CreateSystemScope())
         {
             groupIds = [.. (await scope.ServiceProvider.GetRequiredService<IProviderGroupRepository>().ListAsync(ct)).Select(g => g.Id)];
             busy = await scope.ServiceProvider.GetRequiredService<IServerRepository>().ListGroupsWithTransitioningServersAsync(ct);
@@ -74,7 +74,7 @@ internal sealed class GroupSyncWorker(
         _lastSync[groupId] = clock.UtcNow;
         try
         {
-            await using var scope = scopes.CreateAsyncScope();
+            await using var scope = scopes.CreateSystemScope();
             var report = await scope.ServiceProvider.GetRequiredService<SyncGroup>().ExecuteAsync(groupId, ct);
             if (!report.Succeeded)
                 logger.LogWarning("Sync of group {GroupId} failed: {Error}", groupId, report.Error);

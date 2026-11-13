@@ -13,6 +13,7 @@ public sealed class ProviderGroup
     private ProviderGroup() { } // EF Core
 
     public Guid Id { get; private set; }
+    public Guid TenantId { get; private set; }
     public string Name { get; private set; } = "";
     public string ProviderType { get; private set; } = "";
     public string EncryptedCredentials { get; private set; } = "";
@@ -25,8 +26,10 @@ public sealed class ProviderGroup
     public bool HasCredentials => !string.IsNullOrEmpty(EncryptedCredentials);
 
     public static ProviderGroup Create(
-        string name, string providerType, string encryptedCredentials, ResourceKind enabledResources, DateTime nowUtc)
+        Guid tenantId, string name, string providerType, string encryptedCredentials, ResourceKind enabledResources, DateTime nowUtc)
     {
+        if (tenantId == Guid.Empty)
+            throw new DomainException("A tenant is required.");
         if (string.IsNullOrWhiteSpace(providerType))
             throw new DomainException("A provider type is required.");
         RequireCredentials(encryptedCredentials);
@@ -34,6 +37,7 @@ public sealed class ProviderGroup
         var group = new ProviderGroup
         {
             Id = Guid.NewGuid(),
+            TenantId = tenantId,
             ProviderType = providerType,
             EncryptedCredentials = encryptedCredentials,
             EnabledResources = enabledResources,

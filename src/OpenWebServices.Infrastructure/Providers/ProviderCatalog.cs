@@ -31,7 +31,7 @@ internal sealed class ProviderConnectionFactory(
         if (!group.HasCredentials)
             throw new ProviderNotConfiguredException(group.Name);
 
-        var credentials = GroupCredentials.Deserialize(secrets.Unprotect(group.EncryptedCredentials));
+        var credentials = GroupCredentials.Deserialize(secrets.Unprotect(group.EncryptedCredentials, group.TenantId, SecretPurposes.ProviderCredentials));
         return Connect(group.ProviderType, credentials);
     }
 

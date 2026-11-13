@@ -21,7 +21,7 @@ public class AddProviderGroupTests
         var factory = new FakeConnectionFactory(_connection);
         var sync = new SyncGroup(_groups, factory,
             [new ServerInventorySync(_servers, _clock), new DnsZoneInventorySync(_zones, _clock)], new FakeUnitOfWork(), _clock);
-        return new AddProviderGroup(factory, factory, _groups, new ReversingSecretProtector(), sync, new FakeUnitOfWork(), _clock);
+        return new AddProviderGroup(TestData.Access(), new FakeAuditLog(), factory, factory, _groups, new ReversingSecretProtector(), sync, new FakeUnitOfWork(), _clock);
     }
 
     private static AddProviderGroupCommand Command(string token = "secret", ResourceKind kinds = ResourceKind.Servers) =>
@@ -137,9 +137,9 @@ public class ControlServerPowerTests
         var servers = new InMemoryServerRepository();
         var scheduler = new FakeSyncScheduler();
         var clock = new FakeClock();
-        var server = Server.Import(Guid.NewGuid(), "9", "box", ObservedServerState.Running, null, "fsn1", "cx23", "x", 1m, "EUR", clock.UtcNow);
+        var server = Server.Import(TestData.TenantId, Guid.NewGuid(), "9", "box", ObservedServerState.Running, null, "fsn1", "cx23", "x", 1m, "EUR", clock.UtcNow);
         servers.Add(server);
-        var sut = new Application.Servers.ControlServerPower(
+        var sut = new Application.Servers.ControlServerPower(TestData.Access(),
             new FakeConnectionFactory(connection), servers, scheduler, new FakeUnitOfWork(), clock);
 
         await sut.ExecuteAsync(server.Id, PowerAction.Shutdown, CancellationToken.None);
