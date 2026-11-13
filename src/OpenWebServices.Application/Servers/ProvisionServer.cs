@@ -1,5 +1,6 @@
 using OpenWebServices.Application.Abstractions;
 using OpenWebServices.Domain.Servers;
+using OpenWebServices.Domain.Tenants;
 
 namespace OpenWebServices.Application.Servers;
 
@@ -12,6 +13,8 @@ public sealed record ProvisionServerCommand(
 
 /// <summary>Creates a server at a provider and starts tracking it.</summary>
 public sealed class ProvisionServer(
+    AccessContext access,
+    IProviderGroupRepository groups,
     IProviderConnectionFactory connections,
     IServerRepository servers,
     ISshKeyGenerator keyGenerator,
@@ -22,13 +25,16 @@ public sealed class ProvisionServer(
 {
     public async Task<Guid> ExecuteAsync(ProvisionServerCommand command, CancellationToken ct)
     {
-        var provider = (await connections.ConnectAsync(command.GroupId, ct)).RequireServers();
+        access.Require(TenantRole.Member);
+        var group = await groups.FindAsync(command.GroupId, ct) ?? throw new NotFoundException("Provider group");
+        var provider = (await connections.ConnectAsync(group.Id, ct)).RequireServers();
         var offer = await FindAvailableOfferAsync(provider, command, ct);
 
         var keyPair = keyGenerator.Generate($"ows-{command.Name}");
         var server = Server.Provision(
-            command.GroupId, command.Name, command.Location, command.TypeName, command.Image,
-            offer.MonthlyNet, offer.Currency, secrets.Protect(keyPair.PrivateKeyPem), clock.UtcNow);
+            group.TenantId, group.Id, command.Name, command.Location, command.TypeName, command.Image,
+            offer.MonthlyNet, offer.Currency,
+            secrets.Protect(keyPair.PrivateKeyPem, group.TenantId, SecretPurposes.SshPrivateKey), clock.UtcNow);
 
         // Persist first so a crash after the provider call never leaves an untracked, billed server.
         servers.Add(server);

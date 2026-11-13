@@ -1,10 +1,10 @@
 using Microsoft.EntityFrameworkCore;
 using OpenWebServices.Application.Abstractions;
-using OpenWebServices.Domain.Admins;
 using OpenWebServices.Domain.Apps;
 using OpenWebServices.Domain.Dns;
 using OpenWebServices.Domain.Providers;
 using OpenWebServices.Domain.Servers;
+using OpenWebServices.Domain.Tenants;
 
 namespace OpenWebServices.Infrastructure.Persistence;
 
@@ -102,12 +102,70 @@ internal sealed class AppInstallRepository(AppDbContext db) : IAppInstallReposit
         await db.AppInstalls.Where(a => a.Status == status).OrderBy(a => a.CreatedAtUtc).ToListAsync(ct);
 }
 
-internal sealed class AdminUserRepository(AppDbContext db) : IAdminUserRepository
+internal sealed class TenantRepository(AppDbContext db) : ITenantRepository
 {
-    public void Add(AdminUser user) => db.AdminUsers.Add(user);
+    public void Add(Tenant tenant) => db.Tenants.Add(tenant);
 
-    public Task<AdminUser?> FindByUsernameAsync(string normalizedUsername, CancellationToken ct) =>
-        db.AdminUsers.AsNoTracking().FirstOrDefaultAsync(u => u.Username == normalizedUsername, ct);
+    public Task<Tenant?> FindAsync(Guid id, CancellationToken ct) => db.Tenants.FirstOrDefaultAsync(t => t.Id == id, ct);
 
-    public Task<bool> AnyAsync(CancellationToken ct) => db.AdminUsers.AnyAsync(ct);
+    public async Task<IReadOnlyList<Tenant>> ListAsync(CancellationToken ct) =>
+        await db.Tenants.AsNoTracking().OrderBy(t => t.Name).ToListAsync(ct);
+
+    public Task<bool> AnyAsync(CancellationToken ct) => db.Tenants.AnyAsync(ct);
+}
+
+internal sealed class TenantMembershipRepository(AppDbContext db) : ITenantMembershipRepository
+{
+    public void Add(TenantMembership membership) => db.TenantMemberships.Add(membership);
+
+    public void Remove(TenantMembership membership) => db.TenantMemberships.Remove(membership);
+
+    public Task<TenantMembership?> FindAsync(Guid tenantId, Guid userId, CancellationToken ct) =>
+        db.TenantMemberships.FirstOrDefaultAsync(m => m.TenantId == tenantId && m.UserId == userId, ct);
+
+    public async Task<IReadOnlyList<TenantMembership>> ListByTenantAsync(Guid tenantId, CancellationToken ct) =>
+        await db.TenantMemberships.Where(m => m.TenantId == tenantId).ToListAsync(ct);
+
+    public async Task<IReadOnlyList<TenantMembership>> ListByUserAsync(Guid userId, CancellationToken ct) =>
+        await db.TenantMemberships.Where(m => m.UserId == userId).ToListAsync(ct);
+
+    public async Task<IReadOnlyList<TenantMembership>> ListAllAsync(CancellationToken ct) =>
+        await db.TenantMemberships.AsNoTracking().ToListAsync(ct);
+}
+
+internal sealed class TenantInvitationRepository(AppDbContext db) : ITenantInvitationRepository
+{
+    public void Add(TenantInvitation invitation) => db.TenantInvitations.Add(invitation);
+
+    public Task<TenantInvitation?> FindAsync(Guid id, CancellationToken ct) =>
+        db.TenantInvitations.FirstOrDefaultAsync(i => i.Id == id, ct);
+
+    public Task<TenantInvitation?> FindByTokenHashAsync(string tokenHash, CancellationToken ct) =>
+        db.TenantInvitations.FirstOrDefaultAsync(i => i.TokenHash == tokenHash, ct);
+
+    public async Task<IReadOnlyList<TenantInvitation>> ListOpenAsync(Guid tenantId, DateTime nowUtc, CancellationToken ct) =>
+        await db.TenantInvitations.AsNoTracking()
+            .Where(i => i.TenantId == tenantId && i.AcceptedAtUtc == null && i.RevokedAtUtc == null && i.ExpiresAtUtc > nowUtc)
+            .OrderByDescending(i => i.CreatedAtUtc)
+            .ToListAsync(ct);
+}
+
+internal sealed class EfAuditLog(AppDbContext db, IClock clock) : IAuditLog
+{
+    public void Add(AuditEntry entry) => db.AuditEvents.Add(new AuditEvent
+    {
+        AtUtc = clock.UtcNow,
+        Type = entry.Type,
+        Detail = entry.Detail.Length > 1000 ? entry.Detail[..1000] : entry.Detail,
+        ActorUserId = entry.ActorUserId,
+        TenantId = entry.TenantId,
+        IpAddress = entry.IpAddress,
+    });
+
+    public async Task<IReadOnlyList<AuditRecord>> ListRecentAsync(int count, CancellationToken ct) =>
+        await db.AuditEvents.AsNoTracking()
+            .OrderByDescending(e => e.Id)
+            .Take(count)
+            .Select(e => new AuditRecord(e.AtUtc, e.Type, e.Detail, e.ActorUserId, e.TenantId, e.IpAddress))
+            .ToListAsync(ct);
 }

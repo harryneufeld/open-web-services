@@ -18,6 +18,7 @@ public sealed class AppInstall
     private AppInstall() { } // EF Core
 
     public Guid Id { get; private set; }
+    public Guid TenantId { get; private set; }
     public Guid ServerId { get; private set; }
     public string TemplateId { get; private set; } = "";
     public AppInstallStatus Status { get; private set; }
@@ -34,7 +35,7 @@ public sealed class AppInstall
         }
     }
 
-    public static AppInstall Request(Guid serverId, string templateId, DateTime nowUtc)
+    public static AppInstall Request(Guid tenantId, Guid serverId, string templateId, DateTime nowUtc)
     {
         if (string.IsNullOrWhiteSpace(templateId))
             throw new DomainException("A template is required.");
@@ -42,6 +43,7 @@ public sealed class AppInstall
         return new AppInstall
         {
             Id = Guid.NewGuid(),
+            TenantId = tenantId,
             ServerId = serverId,
             TemplateId = templateId,
             Status = AppInstallStatus.Pending,

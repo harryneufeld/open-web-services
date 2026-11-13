@@ -8,7 +8,7 @@ public class ServerTests
     private static readonly DateTime Now = new(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc);
 
     private static Server NewServer(string name = "web-1") =>
-        Server.Provision(Guid.NewGuid(), name, "fsn1", "cx23", "ubuntu-24.04", 4m, "EUR", "key", Now);
+        Server.Provision(TestData.TenantId, Guid.NewGuid(), name, "fsn1", "cx23", "ubuntu-24.04", 4m, "EUR", "key", Now);
 
     private static Server RunningServer()
     {
@@ -42,7 +42,7 @@ public class ServerTests
     [Fact]
     public void Provision_requires_a_group() =>
         Assert.Throws<DomainException>(() =>
-            Server.Provision(Guid.Empty, "web", "fsn1", "cx23", "ubuntu-24.04", 4m, "EUR", "key", Now));
+            Server.Provision(TestData.TenantId, Guid.Empty, "web", "fsn1", "cx23", "ubuntu-24.04", 4m, "EUR", "key", Now));
 
     [Fact]
     public void Running_server_with_ip_is_reachable_and_can_get_apps()
@@ -126,7 +126,7 @@ public class ServerTests
     [Fact]
     public void Imported_server_takes_the_observed_state_and_cannot_get_apps()
     {
-        var server = Server.Import(Guid.NewGuid(), "99", "Legacy Box", ObservedServerState.Running, "198.51.100.1",
+        var server = Server.Import(TestData.TenantId, Guid.NewGuid(), "99", "Legacy Box", ObservedServerState.Running, "198.51.100.1",
             "nbg1", "cx22", "debian-12", 3.5m, "EUR", Now);
 
         Assert.Equal(ServerOrigin.Imported, server.Origin);
@@ -138,7 +138,7 @@ public class ServerTests
     [Fact]
     public void Imported_server_in_unknown_state_is_not_shown_as_busy()
     {
-        var server = Server.Import(Guid.NewGuid(), "99", "box", ObservedServerState.Unknown, null,
+        var server = Server.Import(TestData.TenantId, Guid.NewGuid(), "99", "box", ObservedServerState.Unknown, null,
             "nbg1", "cx22", "debian-12", 3.5m, "EUR", Now);
 
         Assert.False(server.IsTransitioning);

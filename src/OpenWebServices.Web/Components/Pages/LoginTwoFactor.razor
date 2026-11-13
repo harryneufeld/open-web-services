@@ -1,0 +1,58 @@
+@page "/login/2fa"
+@attribute [AllowAnonymous]
+
+<PageTitle>Second factor · ows</PageTitle>
+
+<div class="auth-card">
+    <span class="brand"><BrandMark /></span>
+    <div class="panel">
+        <form method="post" action="/auth/2fa" class="panel-body">
+            <div>
+                <h1>@(IsRecovery ? "Use a recovery code" : "Enter your authenticator code")</h1>
+                <p class="muted">
+                    @(IsRecovery
+                        ? "Each recovery code works once. Set up your authenticator again afterwards."
+                        : "Open your authenticator app and enter the 6-digit code for ows.")
+                </p>
+            </div>
+            @if (Error is not null)
+            {
+                <Notice Kind="error">@(IsRecovery ? "That recovery code is not valid or was already used." : "That code is not valid. Codes change every 30 seconds.")</Notice>
+            }
+            <AntiforgeryToken />
+            <input type="hidden" name="returnUrl" value="@ReturnUrl" />
+            <input type="hidden" name="mode" value="@(IsRecovery ? "recovery" : "code")" />
+            @if (IsRecovery)
+            {
+                <label class="field"><span>Recovery code</span>
+                    <input name="code" class="mono" autocomplete="off" spellcheck="false" required autofocus />
+                </label>
+            }
+            else
+            {
+                <label class="field"><span>Code</span>
+                    <input name="code" class="mono" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 ]{6,7}" maxlength="7" required autofocus />
+                </label>
+            }
+            <button class="btn btn-primary btn-block" type="submit">Verify</button>
+        </form>
+        <div class="panel-footer">
+            @if (IsRecovery)
+            {
+                <a href="/login/2fa?returnUrl=@Uri.EscapeDataString(ReturnUrl ?? "/")">Use the authenticator app instead</a>
+            }
+            else
+            {
+                <a href="/login/2fa?mode=recovery&returnUrl=@Uri.EscapeDataString(ReturnUrl ?? "/")">Lost your phone? Use a recovery code</a>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    [SupplyParameterFromQuery] public string? Error { get; set; }
+    [SupplyParameterFromQuery] public string? Mode { get; set; }
+    [SupplyParameterFromQuery] public string? ReturnUrl { get; set; }
+
+    private bool IsRecovery => Mode == "recovery";
+}

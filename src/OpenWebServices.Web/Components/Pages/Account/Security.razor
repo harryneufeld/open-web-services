@@ -1,0 +1,187 @@
+@page "/account/security"
+@using System.Buffers.Text
+@using Microsoft.AspNetCore.Identity
+@using OpenWebServices.Infrastructure.Identity
+@using QRCoder
+@inject UserManager<OwsUser> Users
+
+<PageTitle>Account security · ows</PageTitle>
+
+<header class="page-header">
+    <div>
+        <h1>Account security</h1>
+        <p>Signed in as <b>@_user?.UserName</b>@(_strong ? " with a second factor" : " with a password only").</p>
+    </div>
+</header>
+
+@if (Error is not null)
+{
+    <Notice Kind="error">@Error</Notice>
+}
+else if (StatusText is { } status)
+{
+    <Notice Kind="success">@status</Notice>
+}
+
+@if (_user is { IsOwsAdmin: true } && !_hasSecondFactor)
+{
+    <Notice Kind="warn">You are an ows admin. Set up the authenticator app or a passkey now: until then the console stays locked.</Notice>
+}
+else if (_user is { IsOwsAdmin: true } && !_strong)
+{
+    <Notice Kind="warn">You signed in with your password only. Sign out and sign in with your passkey to use admin functions.</Notice>
+}
+
+@if (_user is not null)
+{
+    <section class="panel" id="authenticator" aria-labelledby="authenticator-title">
+        <div class="panel-header">
+            <div>
+                <h2 id="authenticator-title">Authenticator app</h2>
+                <p>A 6-digit code from an app such as an open-source TOTP authenticator, asked after your password.</p>
+            </div>
+            <StatusBadge Text="@(_user.TwoFactorEnabled ? "On" : "Off")" />
+        </div>
+        <div class="panel-body">
+            @if (_user.TwoFactorEnabled)
+            {
+                <p>Recovery codes left: <b>@_recoveryCodesLeft</b> of @AccountEndpoints.RecoveryCodeCount. @(_recoveryCodesLeft <= 3 ? "Create new ones soon." : "")</p>
+                <div class="actions">
+                    <form method="post" action="/account/recovery-codes"><AntiforgeryToken /><button class="btn" type="submit"><Icon Name="refresh" />New recovery codes</button></form>
+                    <form method="post" action="/account/authenticator/disable"><AntiforgeryToken /><button class="btn btn-danger" type="submit">Turn off</button></form>
+                </div>
+            }
+            else if (_authenticatorKey is { } key)
+            {
+                <ol class="steps">
+                    <li>Scan this code with your authenticator app, or enter the key by hand.</li>
+                    <li>Enter the 6-digit code the app shows.</li>
+                </ol>
+                <div class="totp-setup">
+                    <div class="qr" role="img" aria-label="QR code for the authenticator app">@((MarkupString)Qr(key))</div>
+                    <div class="form-stack">
+                        <div class="field"><span class="field-label">Key</span><code class="mono secret">@FormatKey(key)</code></div>
+                        <form method="post" action="/account/authenticator/enable" class="form-stack">
+                            <AntiforgeryToken />
+                            <label class="field"><span>Code from the app</span>
+                                <input name="code" class="mono" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 ]{6,7}" maxlength="7" required />
+                            </label>
+                            <button class="btn btn-primary" type="submit">Turn on</button>
+                        </form>
+                    </div>
+                </div>
+            }
+            else
+            {
+                <form method="post" action="/account/authenticator/start"><AntiforgeryToken /><button class="btn btn-primary" type="submit"><Icon Name="plus" />Set up authenticator app</button></form>
+            }
+        </div>
+    </section>
+
+    <section class="panel" id="passkeys" aria-labelledby="passkeys-title">
+        <div class="panel-header">
+            <div>
+                <h2 id="passkeys-title">Passkeys</h2>
+                <p>Sign in with your device's fingerprint, face or PIN, or a security key. Phishing-resistant and a second factor on its own.</p>
+            </div>
+        </div>
+        @if (_passkeys.Count > 0)
+        {
+            <div class="table-wrap">
+                <table class="stack">
+                    <thead><tr><th>Name</th><th>Added</th><th>Synced</th><th><span class="sr-only">Actions</span></th></tr></thead>
+                    <tbody>
+                        @foreach (var passkey in _passkeys)
+                        {
+                            <tr>
+                                <td>@(passkey.Name ?? "Passkey")</td>
+                                <td data-label="Added">@passkey.CreatedAt.UtcDateTime.ToString("yyyy-MM-dd")</td>
+                                <td data-label="Synced">@(passkey.IsBackedUp ? "Yes" : "This device only")</td>
+                                <td class="num">
+                                    <form method="post" action="/account/passkeys/remove">
+                                        <AntiforgeryToken />
+                                        <input type="hidden" name="id" value="@Base64Url.EncodeToString(passkey.CredentialId)" />
+                                        <button class="btn btn-ghost btn-sm" type="submit" title="Remove passkey"><Icon Name="trash" /><span class="sr-only">Remove @passkey.Name</span></button>
+                                    </form>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+        <form method="post" action="/account/passkeys/add" class="panel-body form-stack" data-passkey="register" data-options-url="/account/passkeys/options">
+            <AntiforgeryToken />
+            <input type="hidden" name="credential" />
+            <label class="field"><span>Name</span><input name="name" maxlength="64" placeholder="e.g. Laptop, phone, security key" /></label>
+            <div class="actions">
+                <button class="btn @(_passkeys.Count == 0 ? "btn-primary" : "")" type="submit"><Icon Name="key" />Add a passkey</button>
+                <span class="hint" data-passkey-status role="status"></span>
+            </div>
+            <p class="hint">Passkeys need ows to be opened over HTTPS (or on localhost).</p>
+        </form>
+    </section>
+
+    <section class="panel" aria-labelledby="password-title">
+        <div class="panel-header"><div><h2 id="password-title">Password</h2><p>Changing it signs out your other sessions.</p></div></div>
+        <form method="post" action="/account/password" class="panel-body form-stack">
+            <AntiforgeryToken />
+            <input type="text" name="username" autocomplete="username" value="@_user.UserName" hidden readonly />
+            <label class="field"><span>Current password</span><input name="current" type="password" autocomplete="current-password" required /></label>
+            <label class="field"><span>New password</span>
+                <input name="password" type="password" autocomplete="new-password" minlength="@OpenWebServices.Infrastructure.Passwords.MinLength" required />
+                <span class="hint">At least @OpenWebServices.Infrastructure.Passwords.MinLength characters.</span>
+            </label>
+            <div><button class="btn" type="submit">Change password</button></div>
+        </form>
+    </section>
+}
+
+@code {
+    [CascadingParameter] private HttpContext HttpContext { get; set; } = default!;
+    [SupplyParameterFromQuery] public string? Error { get; set; }
+    [SupplyParameterFromQuery] public string? Status { get; set; }
+
+    private OwsUser? _user;
+    private bool _strong;
+    private bool _hasSecondFactor;
+    private string? _authenticatorKey;
+    private int _recoveryCodesLeft;
+    private IList<UserPasskeyInfo> _passkeys = [];
+
+    private string? StatusText => Status switch
+    {
+        "welcome" => "Account created. Add a second factor now: an authenticator app, a passkey, or both.",
+        "password" => "Password changed. Other sessions are signed out.",
+        "authenticator-off" => "The authenticator app is turned off.",
+        "passkey-added" => "Passkey added.",
+        "passkey-removed" => "Passkey removed.",
+        _ => null,
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        _user = await Users.GetUserAsync(HttpContext.User);
+        if (_user is null)
+            return;
+
+        _strong = Sessions.IsStrong(HttpContext.User);
+        _passkeys = await Users.GetPasskeysAsync(_user);
+        _hasSecondFactor = _user.TwoFactorEnabled || _passkeys.Count > 0;
+        if (_user.TwoFactorEnabled)
+            _recoveryCodesLeft = await Users.CountRecoveryCodesAsync(_user);
+        else
+            _authenticatorKey = await Users.GetAuthenticatorKeyAsync(_user);
+    }
+
+    private string Qr(string key)
+    {
+        var label = Uri.EscapeDataString($"ows:{_user!.UserName}");
+        var uri = $"otpauth://totp/{label}?secret={key}&issuer=ows&digits=6";
+        using var data = new QRCodeGenerator().CreateQrCode(uri, QRCodeGenerator.ECCLevel.Q);
+        return new SvgQRCode(data).GetGraphic(4, "#161a22", "#ffffff", drawQuietZones: true, sizingMode: SvgQRCode.SizingMode.ViewBoxAttribute);
+    }
+
+    private static string FormatKey(string key) =>
+        string.Join(' ', Enumerable.Range(0, (key.Length + 3) / 4).Select(i => key.Substring(i * 4, Math.Min(4, key.Length - i * 4)))).ToLowerInvariant();
+}

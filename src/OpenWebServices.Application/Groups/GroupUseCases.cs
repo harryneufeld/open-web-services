@@ -2,6 +2,7 @@ using OpenWebServices.Application.Abstractions;
 using OpenWebServices.Application.Sync;
 using OpenWebServices.Domain;
 using OpenWebServices.Domain.Providers;
+using OpenWebServices.Domain.Tenants;
 
 namespace OpenWebServices.Application.Groups;
 
@@ -25,6 +26,8 @@ public sealed record GroupView(ProviderGroup Group, ProviderTypeInfo? Type, int 
 
 /// <summary>Verifies the credentials, stores the group and immediately imports its existing resources.</summary>
 public sealed class AddProviderGroup(
+    AccessContext access,
+    IAuditLog audit,
     IProviderCatalog catalog,
     IProviderConnectionFactory connections,
     IProviderGroupRepository groups,
@@ -35,14 +38,17 @@ public sealed class AddProviderGroup(
 {
     public async Task<(Guid GroupId, SyncReport Import)> ExecuteAsync(AddProviderGroupCommand command, CancellationToken ct)
     {
+        var tenantId = access.Require(TenantRole.Admin);
         var type = catalog.Find(command.ProviderType) ?? throw new NotFoundException($"Provider type '{command.ProviderType}'");
         var credentials = CredentialInput.Validate(type, command.Credentials);
         await connections.Connect(type.Id, credentials).VerifyAsync(ct);
 
         var group = ProviderGroup.Create(
-            command.Name, type.Id, secrets.Protect(GroupCredentials.Serialize(credentials)),
+            tenantId, command.Name, type.Id,
+            secrets.Protect(GroupCredentials.Serialize(credentials), tenantId, SecretPurposes.ProviderCredentials),
             command.EnabledResources & type.SupportedResources, clock.UtcNow);
         groups.Add(group);
+        audit.Add(new AuditEntry(AuditTypes.ProviderCredentialsChanged, $"Added group '{group.Name}' ({type.DisplayName})", access.UserId, tenantId));
         await unitOfWork.SaveChangesAsync(ct);
 
         return (group.Id, await syncGroup.ExecuteAsync(group.Id, ct));
@@ -50,6 +56,8 @@ public sealed class AddProviderGroup(
 }
 
 public sealed class UpdateProviderGroup(
+    AccessContext access,
+    IAuditLog audit,
     IProviderCatalog catalog,
     IProviderConnectionFactory connections,
     IProviderGroupRepository groups,
@@ -61,6 +69,7 @@ public sealed class UpdateProviderGroup(
     /// <returns>The sync run after saving, so newly enabled resources are imported right away.</returns>
     public async Task<SyncReport> ExecuteAsync(UpdateProviderGroupCommand command, CancellationToken ct)
     {
+        access.Require(TenantRole.Admin);
         var group = await groups.FindAsync(command.GroupId, ct) ?? throw new NotFoundException("Provider group");
         var type = catalog.Find(group.ProviderType) ?? throw new NotFoundException($"Provider type '{group.ProviderType}'");
 
@@ -68,7 +77,10 @@ public sealed class UpdateProviderGroup(
         {
             var credentials = CredentialInput.Validate(type, input);
             await connections.Connect(type.Id, credentials).VerifyAsync(ct);
-            group.ReplaceCredentials(secrets.Protect(GroupCredentials.Serialize(credentials)), clock.UtcNow);
+            group.ReplaceCredentials(
+                secrets.Protect(GroupCredentials.Serialize(credentials), group.TenantId, SecretPurposes.ProviderCredentials),
+                clock.UtcNow);
+            audit.Add(new AuditEntry(AuditTypes.ProviderCredentialsChanged, $"Replaced credentials of '{group.Name}'", access.UserId, group.TenantId));
         }
 
         group.Rename(command.Name, clock.UtcNow);
@@ -83,12 +95,15 @@ public sealed class UpdateProviderGroup(
 /// Stops managing a group. Its tracked servers and zones are removed from the platform; nothing is deleted at the
 /// provider. SSH keys of servers created here are lost with them.
 /// </summary>
-public sealed class RemoveProviderGroup(IProviderGroupRepository groups, IUnitOfWork unitOfWork)
+public sealed class RemoveProviderGroup(
+    AccessContext access, IAuditLog audit, IProviderGroupRepository groups, IUnitOfWork unitOfWork)
 {
     public async Task ExecuteAsync(Guid groupId, CancellationToken ct)
     {
+        access.Require(TenantRole.Admin);
         var group = await groups.FindAsync(groupId, ct) ?? throw new NotFoundException("Provider group");
         groups.Remove(group);
+        audit.Add(new AuditEntry(AuditTypes.ProviderGroupRemoved, $"Removed group '{group.Name}'", access.UserId, group.TenantId));
         await unitOfWork.SaveChangesAsync(ct);
     }
 }

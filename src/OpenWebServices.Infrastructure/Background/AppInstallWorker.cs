@@ -29,7 +29,7 @@ internal sealed class AppInstallWorker(IServiceScopeFactory scopes, ILogger<AppI
         {
             foreach (var id in await ListPendingIdsAsync(ct))
             {
-                await using var scope = scopes.CreateAsyncScope();
+                await using var scope = scopes.CreateSystemScope();
                 await scope.ServiceProvider.GetRequiredService<RunAppInstall>().ExecuteAsync(id, ct);
             }
         }
@@ -41,7 +41,7 @@ internal sealed class AppInstallWorker(IServiceScopeFactory scopes, ILogger<AppI
 
     private async Task<List<Guid>> ListPendingIdsAsync(CancellationToken ct)
     {
-        await using var scope = scopes.CreateAsyncScope();
+        await using var scope = scopes.CreateSystemScope();
         var repository = scope.ServiceProvider.GetRequiredService<IAppInstallRepository>();
         return (await repository.ListByStatusAsync(AppInstallStatus.Pending, ct)).Select(i => i.Id).ToList();
     }
