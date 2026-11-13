@@ -1,29 +1,56 @@
-﻿@inherits LayoutComponentBase
+@inherits LayoutComponentBase
 
-<header class="topbar">
-    <a class="brand" href="/">Open Web Services</a>
-    <AuthorizeView>
-        <Authorized>
-            <nav>
-                <NavLink href="/" Match="NavLinkMatch.All">Servers</NavLink>
-                <NavLink href="/dns">DNS</NavLink>
-                <NavLink href="/groups">Groups</NavLink>
+<AuthorizeView>
+    <Authorized>
+        <div class="shell">
+            <aside class="sidebar">
+                <a class="brand" href="/" aria-label="ows console home"><BrandMark /><small>Open Web<br />Services</small></a>
+                <nav class="nav" aria-label="Main">
+                    <NavLink href="/" Match="NavLinkMatch.All"><Icon Name="overview" />Console home</NavLink>
+                    <span class="nav-label">Compute</span>
+                    <NavLink href="/servers"><ServiceBadge Service="OwsService.Servers" />OC2<span class="plain">Servers</span></NavLink>
+                    <span class="nav-label">Networking</span>
+                    <NavLink href="/dns"><ServiceBadge Service="OwsService.Dns" />Route 66<span class="plain">DNS</span></NavLink>
+                    <span class="nav-label">Accounts</span>
+                    <NavLink href="/groups"><ServiceBadge Service="OwsService.Groups" />IOU<span class="plain">Groups</span></NavLink>
+                    <span class="nav-label">Coming eventually</span>
+                    <span class="soon" title="Not built yet"><ServiceBadge Service="OwsService.Storage" />S4<span class="plain">Storage</span></span>
+                </nav>
+                <div class="sidebar-footer">
+                    <span class="avatar" aria-hidden="true">@Initial(context.User.Identity?.Name)</span>
+                    <span class="user">@context.User.Identity?.Name</span>
+                    <form method="post" action="/auth/logout">
+                        <AntiforgeryToken />
+                        <button class="btn btn-ghost btn-sm" type="submit" title="Sign out"><Icon Name="logout" /><span class="sr-only">Sign out</span></button>
+                    </form>
+                </div>
+            </aside>
+            <nav class="tabbar" aria-label="Main">
+                <NavLink href="/" Match="NavLinkMatch.All"><Icon Name="overview" />Home</NavLink>
+                <NavLink href="/servers"><ServiceBadge Service="OwsService.Servers" />OC2<small>Servers</small></NavLink>
+                <NavLink href="/dns"><ServiceBadge Service="OwsService.Dns" />Route 66<small>DNS</small></NavLink>
+                <NavLink href="/groups"><ServiceBadge Service="OwsService.Groups" />IOU<small>Groups</small></NavLink>
             </nav>
-            <form method="post" action="/auth/logout" class="logout">
-                <AntiforgeryToken />
-                <span class="muted">@context.User.Identity?.Name</span>
-                <button class="btn" type="submit">Sign out</button>
-            </form>
-        </Authorized>
-    </AuthorizeView>
-</header>
-
-<main>
-    @Body
-</main>
+            <main class="main">
+                <div class="page">
+                    @Body
+                </div>
+            </main>
+        </div>
+    </Authorized>
+    <NotAuthorized>
+        <main class="auth">
+            @Body
+        </main>
+    </NotAuthorized>
+</AuthorizeView>
 
 <div id="blazor-error-ui" data-nosnippet>
-    An unhandled error has occurred.
+    An unexpected error occurred.
     <a href="." class="reload">Reload</a>
-    <span class="dismiss">🗙</span>
+    <span class="dismiss">×</span>
 </div>
+
+@code {
+    private static string Initial(string? name) => string.IsNullOrEmpty(name) ? "?" : name[..1];
+}

@@ -1,0 +1,13 @@
+@* The ows logo (concept 4b): "ows" in Segoe UI Variable Display 800, letter-spacing -4, with a short symmetric
+   smile. The word is placed so its ink (x 21.4–142.6) is centred on the smile (centre x 82); the viewBox is cut
+   to the ink plus 2 units on every side. Keep this geometry identical to AppIcon.razor and wwwroot/favicon.svg. *@
+<svg class="wordmark @Class" viewBox="19.5 24 125 65" role="img" aria-label="ows">
+    <text x="79.87" y="62" text-anchor="middle" font-size="70" font-weight="800" letter-spacing="-4"
+          font-family="'Segoe UI Variable Display', 'Segoe UI', system-ui, -apple-system, Arial, sans-serif"
+          fill="currentColor">ows</text>
+    <path d="M44 74 Q82 92 120 74" fill="none" stroke="var(--brand-smile)" stroke-width="8" stroke-linecap="round" />
+</svg>
+
+@code {
+    [Parameter] public string? Class { get; set; }
+}

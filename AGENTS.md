@@ -4,7 +4,7 @@
 
 ows (Open Web Services): one console for servers and DNS across hosting providers. ASP.NET Core 10, Blazor Server
 (interactive server rendering), EF Core with PostgreSQL, plain CSS. Architecture and the provider plug-in model are
-described in `README.md`.
+described in `README.md`; product context in `PRODUCT.md`; visual identity in `docs/brand.md`.
 
 ## Commands
 
@@ -24,5 +24,6 @@ described in `README.md`.
 - Dependencies point inward: Web → Infrastructure → Application → Domain. Domain has no dependencies.
 - Warnings are errors (`Directory.Build.props`). Keep the build clean.
 - Provider specifics live only in Infrastructure behind `IProviderConnector`, `IServerProvider` and `IDnsProvider`.
+- UI: reuse the components in `Components/Shared` and the tokens in `wwwroot/app.css`; follow `docs/brand.md`.
 - Never commit secrets, hostnames or personal details. Machine-specific notes belong in `CLAUDE.local.md`
   (git-ignored).

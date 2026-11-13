@@ -1,0 +1,73 @@
+@* One authored icon set: 24px grid, 1.75 stroke, round caps. Add shapes here, never use glyphs or emoji. *@
+<svg class="icon @Class" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+    @switch (Name)
+    {
+        case "overview":
+            <rect x="3.5" y="3.5" width="7" height="7" rx="1.5" /><rect x="13.5" y="3.5" width="7" height="7" rx="1.5" />
+            <rect x="3.5" y="13.5" width="7" height="7" rx="1.5" /><rect x="13.5" y="13.5" width="7" height="7" rx="1.5" />
+            break;
+        case "server":
+            <rect x="3.5" y="4" width="17" height="7" rx="1.75" /><rect x="3.5" y="13" width="17" height="7" rx="1.75" />
+            <path d="M7.5 7.5h.01M7.5 16.5h.01M11 7.5h2M11 16.5h2" />
+            break;
+        case "globe":
+            <circle cx="12" cy="12" r="8.5" /><path d="M3.5 12h17M12 3.5c2.3 2.4 3.5 5.2 3.5 8.5s-1.2 6.1-3.5 8.5c-2.3-2.4-3.5-5.2-3.5-8.5s1.2-6.1 3.5-8.5Z" />
+            break;
+        case "groups":
+            <path d="m12 3.5 8.5 4.25L12 12 3.5 7.75 12 3.5Z" /><path d="m3.5 12 8.5 4.25L20.5 12" /><path d="m3.5 16.25 8.5 4.25 8.5-4.25" />
+            break;
+        case "plus":
+            <path d="M12 5v14M5 12h14" />
+            break;
+        case "refresh":
+            <path d="M20 11a8 8 0 0 0-14.6-4.5M4 13a8 8 0 0 0 14.6 4.5" /><path d="M5 3.5V7h3.5M19 20.5V17h-3.5" />
+            break;
+        case "power":
+            <path d="M12 3.5v8" /><path d="M7.2 6.2a7.5 7.5 0 1 0 9.6 0" />
+            break;
+        case "stop":
+            <rect x="6" y="6" width="12" height="12" rx="2" />
+            break;
+        case "rotate":
+            <path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3" /><path d="M19.5 4.5v4h-4" />
+            break;
+        case "trash":
+            <path d="M4.5 7h15M9.5 7V4.5h5V7M6.5 7l.9 12.1a1.5 1.5 0 0 0 1.5 1.4h6.2a1.5 1.5 0 0 0 1.5-1.4L17.5 7" />
+            break;
+        case "chevron-right":
+            <path d="m9.5 6 6 6-6 6" />
+            break;
+        case "arrow-right":
+            <path d="M5 12h14M13 6l6 6-6 6" />
+            break;
+        case "logout":
+            <path d="M14.5 4.5h3a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2h-3" /><path d="M10 16.5 5.5 12 10 7.5M5.5 12h10" />
+            break;
+        case "alert":
+            <path d="M12 4 2.8 19.5h18.4L12 4Z" /><path d="M12 10v4M12 17h.01" />
+            break;
+        case "check":
+            <circle cx="12" cy="12" r="8.5" /><path d="m8.5 12.25 2.4 2.4 4.6-5.15" />
+            break;
+        case "edit":
+            <path d="M4.5 19.5h4l10-10a2.1 2.1 0 0 0-4-4l-10 10v4Z" /><path d="m13.5 6.5 4 4" />
+            break;
+        case "box":
+            <path d="m12 3.5 8 4v9l-8 4-8-4v-9l8-4Z" /><path d="m4 7.5 8 4 8-4M12 11.5v9" />
+            break;
+        case "key":
+            <circle cx="8" cy="15" r="4.5" /><path d="m11.2 11.8 8.3-8.3M16.5 6.5l2.5 2.5M14 9l2 2" />
+            break;
+        case "info":
+            <circle cx="12" cy="12" r="8.5" /><path d="M12 11v5M12 8h.01" />
+            break;
+        case "x":
+            <path d="M6 6l12 12M18 6 6 18" />
+            break;
+    }
+</svg>
+
+@code {
+    [Parameter, EditorRequired] public string Name { get; set; } = "";
+    [Parameter] public string? Class { get; set; }
+}

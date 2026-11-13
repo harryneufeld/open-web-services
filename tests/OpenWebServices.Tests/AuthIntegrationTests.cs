@@ -66,7 +66,8 @@ public sealed partial class AuthIntegrationTests : IDisposable
     }
 
     [Theory]
-    [InlineData("/", "Servers")]
+    [InlineData("/", "Console home")]
+    [InlineData("/servers", "Servers")]
     [InlineData("/servers/new", "New server")]
     [InlineData("/groups", "Provider groups")]
     [InlineData("/settings", "Provider groups")]

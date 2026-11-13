@@ -1,0 +1,7 @@
+@* A service's coloured badge, e.g. OC2 for servers. Colours come from --svc-* tokens. *@
+<span class="svc-badge svc-@Service.Key @(Large ? "lg" : null)" aria-hidden="true">@Service.Badge</span>
+
+@code {
+    [Parameter, EditorRequired] public OwsService Service { get; set; } = OwsService.Servers;
+    [Parameter] public bool Large { get; set; }
+}

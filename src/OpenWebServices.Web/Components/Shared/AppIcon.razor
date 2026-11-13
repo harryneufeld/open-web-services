@@ -1,0 +1,14 @@
+@* App icon: the logo in its dark colours: ink tile, white word, light-blue smile. Same drawing as wwwroot/favicon.svg. *@
+<svg class="app-icon" viewBox="0 0 64 64" width="@Size" height="@Size" aria-hidden="true" focusable="false">
+    <rect width="64" height="64" rx="14" fill="#161a22" />
+    <svg x="7" y="19" width="50" height="26" viewBox="19.5 24 125 65">
+        <text x="79.87" y="62" text-anchor="middle" font-size="70" font-weight="800" letter-spacing="-4"
+              font-family="'Segoe UI Variable Display', 'Segoe UI', system-ui, -apple-system, Arial, sans-serif"
+              fill="#fff">ows</text>
+        <path d="M44 74 Q82 92 120 74" fill="none" stroke="#7fa6ff" stroke-width="9" stroke-linecap="round" />
+    </svg>
+</svg>
+
+@code {
+    [Parameter] public int Size { get; set; } = 40;
+}

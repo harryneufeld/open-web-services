@@ -3,23 +3,25 @@
 @inject UseCaseRunner Runner
 @inject NavigationManager Navigation
 
-<PageTitle>Sign in</PageTitle>
+<PageTitle>Sign in · ows</PageTitle>
 
 <div class="auth-card">
-    <h1>Sign in</h1>
-
-    @if (Error is not null)
-    {
-        <p class="alert">Wrong username or password.</p>
-    }
-
-    <form method="post" action="/auth/login" class="form stacked">
-        <AntiforgeryToken />
-        <input type="hidden" name="returnUrl" value="@ReturnUrl" />
-        <label>Username <input name="username" autocomplete="username" required autofocus /></label>
-        <label>Password <input name="password" type="password" autocomplete="current-password" required /></label>
-        <button class="btn primary" type="submit">Sign in</button>
-    </form>
+    <span class="brand"><BrandMark /></span>
+    <div class="panel">
+        <form method="post" action="/auth/login" class="panel-body">
+            <h1>Sign in to your console</h1>
+            @if (Error is not null)
+            {
+                <Notice Kind="error">Wrong username or password.</Notice>
+            }
+            <AntiforgeryToken />
+            <input type="hidden" name="returnUrl" value="@ReturnUrl" />
+            <label class="field"><span>Username</span><input name="username" autocomplete="username" required autofocus /></label>
+            <label class="field"><span>Password</span><input name="password" type="password" autocomplete="current-password" required /></label>
+            <button class="btn btn-primary btn-block" type="submit">Sign in</button>
+        </form>
+    </div>
+    <p class="auth-foot">Open Web Services: one console, many providers.</p>
 </div>
 
 @code {

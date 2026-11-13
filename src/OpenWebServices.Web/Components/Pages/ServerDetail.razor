@@ -4,95 +4,142 @@
 @inject IAppTemplateCatalog Templates
 @inject NavigationManager Navigation
 
-<PageTitle>@(_view?.Server.Name ?? "Server")</PageTitle>
+<PageTitle>@(_view?.Server.Name ?? "Server") · ows</PageTitle>
 
 <LiveUpdates Topics="[ResourceTopics.Servers, ResourceTopics.AppInstalls]" Id="Id" OnChange="LoadAsync" />
 
-@if (_error is not null)
-{
-    <p class="alert">@_error</p>
-}
+<nav class="breadcrumb" aria-label="Breadcrumb"><a href="/servers">Servers</a><Icon Name="chevron-right" /><span>@(_view?.Server.Name ?? "…")</span></nav>
 
 @if (_view is null)
 {
-    <p>Loading…</p>
+    @if (_error is not null)
+    {
+        <Notice Kind="error">@_error</Notice>
+    }
+    <section class="panel"><SkeletonRows Count="2" /></section>
 }
 else
 {
     var server = _view.Server;
-    <div class="page-head">
-        <h1>@server.Name <StatusBadge Text="@server.Status.ToString()" Busy="server.IsTransitioning" /></h1>
-        <a href="/">← All servers</a>
-    </div>
+    <header class="page-header">
+        <div>
+            <div class="title-row">
+                <h1>@server.Name</h1>
+                <StatusBadge Text="@server.Status.ToString()" />
+                @if (server.Origin == ServerOrigin.Imported)
+                {
+                    <span class="tag">Imported</span>
+                }
+            </div>
+            <p>@server.ServerType in @server.Location · <a href="/groups/@server.GroupId">@_view.GroupName</a></p>
+        </div>
+        <div class="page-actions">
+            @if (server.Status == ServerStatus.Stopped)
+            {
+                <button class="btn" disabled="@_busy" @onclick="() => PowerAsync(PowerAction.PowerOn)"><Icon Name="power" />Power on</button>
+            }
+            else
+            {
+                <button class="btn" disabled="@(_busy || server.Status != ServerStatus.Running)" @onclick="() => PowerAsync(PowerAction.Reboot)"><Icon Name="rotate" />Reboot</button>
+                <button class="btn" disabled="@(_busy || server.Status != ServerStatus.Running)" @onclick="() => PowerAsync(PowerAction.Shutdown)"><Icon Name="stop" />Shut down</button>
+            }
+        </div>
+    </header>
 
+    @if (_error is not null)
+    {
+        <Notice Kind="error">@_error</Notice>
+    }
     @if (server.FailureReason is not null)
     {
-        <p class="alert">@server.FailureReason</p>
+        <Notice Kind="error">@server.FailureReason</Notice>
     }
 
-    <dl class="facts">
-        <dt>Group</dt><dd><a href="/groups/@server.GroupId">@_view.GroupName</a> <span class="muted">@_view.ProviderName</span></dd>
-        <dt>Origin</dt><dd>@(server.Origin == ServerOrigin.Imported ? "Imported from the provider" : "Created here")</dd>
-        <dt>Location</dt><dd>@server.Location</dd>
-        <dt>Type</dt><dd>@server.ServerType</dd>
-        <dt>Image</dt><dd>@server.Image</dd>
-        <dt>IPv4</dt><dd>@(server.PublicIpv4 ?? "–")</dd>
-        <dt>Net / month</dt><dd>@Formatting.Money(server.MonthlyPriceNet, server.Currency)</dd>
-    </dl>
+    <section class="panel" aria-labelledby="details">
+        <div class="panel-header"><h2 id="details">Details</h2></div>
+        <div class="panel-body">
+            <dl class="facts">
+                <div><dt>Public IPv4</dt><dd class="mono">@(server.PublicIpv4 ?? "–")</dd></div>
+                <div><dt>Provider</dt><dd>@_view.ProviderName</dd></div>
+                <div><dt>Group</dt><dd><a href="/groups/@server.GroupId">@_view.GroupName</a></dd></div>
+                <div><dt>Location</dt><dd>@server.Location</dd></div>
+                <div><dt>Type</dt><dd>@server.ServerType</dd></div>
+                <div><dt>Image</dt><dd>@server.Image</dd></div>
+                <div><dt>Monthly, net</dt><dd class="num" style="text-align:left">@Formatting.Money(server.MonthlyPriceNet, server.Currency)</dd></div>
+                <div><dt>Provider ID</dt><dd class="mono">@(server.ExternalId ?? "–")</dd></div>
+                <div><dt>Origin</dt><dd>@(server.Origin == ServerOrigin.Imported ? "Imported from the provider" : "Created in ows")</dd></div>
+            </dl>
+        </div>
+    </section>
 
-    <h2>Power</h2>
-    <div class="actions">
-        <button class="btn" disabled="@(_busy || server.Status != ServerStatus.Stopped)" @onclick="() => PowerAsync(PowerAction.PowerOn)">Power on</button>
-        <button class="btn" disabled="@(_busy || server.Status != ServerStatus.Running)" @onclick="() => PowerAsync(PowerAction.Shutdown)">Shut down</button>
-        <button class="btn" disabled="@(_busy || server.Status != ServerStatus.Running)" @onclick="() => PowerAsync(PowerAction.Reboot)">Reboot</button>
-        @if (_confirmDelete)
+    <section class="panel" aria-labelledby="apps">
+        <div class="panel-header">
+            <div>
+                <h2 id="apps">Apps</h2>
+                <p>Docker Compose apps installed over SSH.</p>
+            </div>
+        </div>
+        @if (server.EncryptedSshPrivateKey is null)
         {
-            <button class="btn danger" disabled="@_busy" @onclick="DeleteAsync">Really delete at the provider?</button>
-            <button class="btn" @onclick="() => _confirmDelete = false">Cancel</button>
+            <div class="panel-body">
+                <Notice>Apps can only be installed on servers created in ows. Imported servers have no SSH key ows can use.</Notice>
+            </div>
         }
         else
         {
-            <button class="btn danger" disabled="@_busy" @onclick="() => _confirmDelete = true">Delete</button>
+            <div class="toolbar">
+                <label class="field" style="flex:1; min-width: 240px">
+                    <span>App</span>
+                    <select @bind="_templateId">
+                        @foreach (var t in Templates.All)
+                        {
+                            <option value="@t.Id">@t.Name – @t.Description</option>
+                        }
+                    </select>
+                </label>
+                <button class="btn btn-primary" disabled="@(_busy || !server.CanInstallApps)" @onclick="InstallAsync"><Icon Name="box" />Install</button>
+            </div>
+            @if (!server.CanInstallApps)
+            {
+                <div class="panel-body"><p class="hint">Apps can be installed once the server is running.</p></div>
+            }
+            @if (_installs.Count == 0)
+            {
+                <div class="panel-body"><p class="hint">No apps installed yet.</p></div>
+            }
+            @foreach (var install in _installs)
+            {
+                <details class="log" open="@(install.Status is AppInstallStatus.Installing or AppInstallStatus.Failed)">
+                    <summary>
+                        <span class="grow">@(Templates.Find(install.TemplateId)?.Name ?? install.TemplateId)</span>
+                        <span class="subtle">@Formatting.Ago(install.CreatedAtUtc)</span>
+                        <StatusBadge Text="@install.Status.ToString()" />
+                    </summary>
+                    <pre>@install.Log</pre>
+                </details>
+            }
         }
-        @if (_busy)
-        {
-            <span class="muted"><span class="spinner"></span> Sending…</span>
-        }
-    </div>
+    </section>
 
-    <h2>Apps</h2>
-    @if (server.EncryptedSshPrivateKey is null)
-    {
-        <p class="muted">Apps can only be installed on servers created here: imported servers have no SSH key the platform can use.</p>
-    }
-    else
-    {
-        <div class="form inline-form">
-            <select @bind="_templateId">
-                @foreach (var t in Templates.All)
-                {
-                    <option value="@t.Id">@t.Name – @t.Description</option>
-                }
-            </select>
-            <button class="btn primary" disabled="@(_busy || !server.CanInstallApps)" @onclick="InstallAsync">Install</button>
+    <section class="panel danger" aria-labelledby="danger">
+        <div class="panel-header">
+            <div>
+                <h2 id="danger">Delete server</h2>
+                <p>Deletes the server at @_view.ProviderName, including its disk. This cannot be undone.</p>
+            </div>
+            @if (_confirmDelete)
+            {
+                <div class="page-actions">
+                    <button class="btn" @onclick="() => _confirmDelete = false">Cancel</button>
+                    <button class="btn btn-danger-solid" disabled="@_busy" @onclick="DeleteAsync"><Icon Name="trash" />Delete @server.Name</button>
+                </div>
+            }
+            else
+            {
+                <button class="btn btn-danger" disabled="@_busy" @onclick="() => _confirmDelete = true"><Icon Name="trash" />Delete…</button>
+            }
         </div>
-        @if (!server.CanInstallApps)
-        {
-            <p class="muted">Apps can be installed once the server is running.</p>
-        }
-    }
-
-    @foreach (var install in _installs)
-    {
-        <details open="@(install.Status is AppInstallStatus.Installing or AppInstallStatus.Failed)">
-            <summary>
-                @install.TemplateId
-                <StatusBadge Text="@install.Status.ToString()" Busy="install.Status is AppInstallStatus.Pending or AppInstallStatus.Installing" />
-                <span class="muted">@install.CreatedAtUtc.ToString("u")</span>
-            </summary>
-            <pre>@install.Log</pre>
-        </details>
-    }
+    </section>
 }
 
 @code {
@@ -120,7 +167,7 @@ else
         }
         catch (NotFoundException)
         {
-            Navigation.NavigateTo("/");
+            Navigation.NavigateTo("/servers");
         }
         catch (Exception ex) when (UserFacingErrors.Matches(ex))
         {
@@ -138,7 +185,7 @@ else
     {
         await RunCommandAsync(() => Runner.RunAsync<DeleteServer>(u => u.ExecuteAsync(Id, CancellationToken.None)));
         if (_error is null)
-            Navigation.NavigateTo("/");
+            Navigation.NavigateTo("/servers");
     }
 
     private async Task RunCommandAsync(Func<Task> command)

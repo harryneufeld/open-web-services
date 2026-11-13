@@ -32,7 +32,7 @@ docker compose up -d db
 dotnet run --project src/OpenWebServices.Web
 ```
 
-Open the app, add a provider group under Groups (existing servers and DNS zones are imported), then create servers or zones. Migrations are applied at startup.
+Open the app, add a provider group under IOU (Provider groups) (existing servers and DNS zones are imported), then create servers or zones. Migrations are applied at startup.
 
 ## Tests
 

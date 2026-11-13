@@ -4,123 +4,144 @@
 @inject UseCaseRunner Runner
 @inject IProviderCatalog Catalog
 
-<PageTitle>Groups</PageTitle>
-
-<h1>Provider groups</h1>
-<p class="muted">
-    A group is one set of credentials at one provider — for Hetzner Cloud that is one project's API token.
-    Each group chooses which resources it syncs. Existing resources are imported when a group is added.
-</p>
+<PageTitle>Provider groups · ows</PageTitle>
 
 <LiveUpdates Topics="[ResourceTopics.Groups, ResourceTopics.Servers, ResourceTopics.DnsZones]" OnChange="LoadAsync" />
 
-@if (_groups is null)
-{
-    <p>Loading…</p>
-}
-else if (_groups.Count == 0)
-{
-    <p class="muted">No groups yet. Add one below.</p>
-}
-else
-{
-    <table>
-        <thead>
-            <tr><th>Name</th><th>Provider</th><th>Syncs</th><th class="num">Servers</th><th class="num">DNS zones</th><th>Last sync</th></tr>
-        </thead>
-        <tbody>
-            @foreach (var view in _groups)
-            {
-                var g = view.Group;
-                <tr>
-                    <td><a href="/groups/@g.Id">@g.Name</a></td>
-                    <td>@view.ProviderName</td>
-                    <td>
-                        @foreach (var kind in ResourceKinds.Split(g.EnabledResources))
-                        {
-                            <span class="tag">@ResourceKinds.Label(kind)</span>
-                        }
-                    </td>
-                    <td class="num">@view.ServerCount</td>
-                    <td class="num">@view.ZoneCount</td>
-                    <td>
-                        @if (g.LastSyncError is not null)
-                        {
-                            <span class="badge failed" title="@g.LastSyncError">failed</span>
-                        }
-                        <span class="muted">@Formatting.Ago(g.LastSyncAtUtc)</span>
-                    </td>
-                </tr>
-            }
-        </tbody>
-    </table>
-}
-
-<h2>Add a group</h2>
-
-@if (Catalog.All.Count == 0)
-{
-    <p class="muted">No provider types are registered.</p>
-}
-else
-{
-    <div class="form stacked narrow">
-        <label>Provider
-            <select value="@_typeId" @onchange="e => SelectType(e.Value?.ToString())">
-                @foreach (var type in Catalog.All)
-                {
-                    <option value="@type.Id">@type.DisplayName</option>
-                }
-            </select>
-        </label>
-        @if (SelectedType is { } selected)
+<header class="page-header">
+    <div>
+        <span class="svc-line"><ServiceBadge Service="OwsService.Groups" /><b>@OwsService.Groups.Name</b><span class="tagline"> · @OwsService.Groups.Tagline</span></span>
+        <h1>Provider groups</h1>
+        <p>A group is one set of credentials at one provider, for Hetzner Cloud one project's API token. Each group chooses which resources it syncs.</p>
+    </div>
+    <div class="page-actions">
+        @if (!_showForm)
         {
-            <p class="muted">@selected.Description</p>
-            <label>Name
-                <input @bind="_name" placeholder="e.g. Hetzner – production" maxlength="@ProviderGroup.MaxNameLength" />
-            </label>
-            @foreach (var field in selected.CredentialFields)
-            {
-                <label>@field.Label
-                    <input type="@(field.IsSecret ? "password" : "text")" autocomplete="off"
-                           value="@_credentials.GetValueOrDefault(field.Key)"
-                           @onchange="e => _credentials[field.Key] = e.Value?.ToString() ?? string.Empty" />
-                    @if (field.Help is not null)
-                    {
-                        <span class="muted">@field.Help</span>
-                    }
-                </label>
-            }
-            <fieldset>
-                <legend>Sync</legend>
-                @foreach (var kind in ResourceKinds.Split(selected.SupportedResources))
-                {
-                    <label class="inline">
-                        <input type="checkbox" checked="@_enabled.HasFlag(kind)" @onchange="e => Toggle(kind, e.Value is true)" />
-                        @ResourceKinds.Label(kind)
-                    </label>
-                }
-            </fieldset>
-            <div>
-                <button class="btn primary" disabled="@(_busy || !CanSubmit)" @onclick="AddAsync">
-                    @if (_busy)
-                    {
-                        <span class="spinner"></span><text>Verifying and importing…</text>
-                    }
-                    else
-                    {
-                        <text>Add and import</text>
-                    }
-                </button>
-            </div>
+            <button class="btn btn-primary" @onclick="() => _showForm = true"><Icon Name="plus" />Add provider group</button>
         }
     </div>
-}
+</header>
 
 @if (_message is not null)
 {
-    <p class="@(_isError ? "alert" : "ok")">@_message</p>
+    <Notice Kind="@(_isError ? "error" : "success")">@_message</Notice>
 }
+
+@if (_showForm && SelectedType is { } selected)
+{
+    <section class="panel" aria-labelledby="add">
+        <div class="panel-header">
+            <div>
+                <h2 id="add">Add a provider group</h2>
+                <p>Credentials are checked first, then existing resources are imported.</p>
+            </div>
+            @if (_groups is { Count: > 0 })
+            {
+                <button class="btn btn-ghost btn-sm" @onclick="() => _showForm = false"><Icon Name="x" /><span class="sr-only">Close</span></button>
+            }
+        </div>
+        <div class="panel-body">
+            <div class="form-stack">
+                <label class="field"><span>Provider</span>
+                    <select value="@_typeId" @onchange="e => SelectType(e.Value?.ToString())">
+                        @foreach (var type in Catalog.All)
+                        {
+                            <option value="@type.Id">@type.DisplayName</option>
+                        }
+                    </select>
+                    <span class="hint">@selected.Description</span>
+                </label>
+                <label class="field"><span>Name</span>
+                    <input @bind="_name" @bind:event="oninput" placeholder="e.g. Hetzner production" maxlength="@ProviderGroup.MaxNameLength" />
+                </label>
+                @foreach (var field in selected.CredentialFields)
+                {
+                    <label class="field"><span>@field.Label</span>
+                        <input type="@(field.IsSecret ? "password" : "text")" autocomplete="off" spellcheck="false"
+                               value="@_credentials.GetValueOrDefault(field.Key)"
+                               @oninput="e => _credentials[field.Key] = e.Value?.ToString() ?? string.Empty" />
+                        <span class="hint">@(field.Help ?? "Stored encrypted.")</span>
+                    </label>
+                }
+                <div class="field">
+                    <span class="field-label">Sync</span>
+                    <div class="choice-group">
+                        @foreach (var kind in ResourceKinds.Split(selected.SupportedResources))
+                        {
+                            <label class="check">
+                                <input type="checkbox" checked="@_enabled.HasFlag(kind)" @onchange="e => Toggle(kind, e.Value is true)" />
+                                @ResourceKinds.Label(kind)
+                            </label>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="panel-footer">
+            <button class="btn btn-primary" disabled="@(_busy || !CanSubmit)" @onclick="AddAsync">
+                @if (_busy)
+                {
+                    <span class="spinner"></span><text>Checking and importing…</text>
+                }
+                else
+                {
+                    <text>Add and import</text>
+                }
+            </button>
+        </div>
+    </section>
+}
+
+<section class="panel">
+    @if (_groups is null)
+    {
+        <SkeletonRows />
+    }
+    else if (_groups.Count == 0)
+    {
+        <EmptyState IconName="groups" Title="No provider groups yet">
+            <ChildContent>Add your first group above. ows imports its servers and DNS zones right away.</ChildContent>
+        </EmptyState>
+    }
+    else
+    {
+        <div class="table-wrap">
+            <table class="stack">
+                <thead>
+                    <tr><th>Group</th><th>Provider</th><th>Syncs</th><th class="num">Servers</th><th class="num">DNS zones</th><th>Last sync</th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var view in _groups)
+                    {
+                        var g = view.Group;
+                        <tr>
+                            <td><a class="primary-link" href="/groups/@g.Id">@g.Name</a></td>
+                            <td data-label="Provider">@view.ProviderName</td>
+                            <td data-label="Syncs">
+                                @foreach (var kind in ResourceKinds.Split(g.EnabledResources))
+                                {
+                                    <span class="tag">@ResourceKinds.Label(kind)</span>
+                                }
+                            </td>
+                            <td data-label="Servers" class="num">@view.ServerCount</td>
+                            <td data-label="DNS zones" class="num">@view.ZoneCount</td>
+                            <td data-label="Last sync">
+                                @if (g.LastSyncError is not null)
+                                {
+                                    <span title="@g.LastSyncError"><StatusBadge Text="failed" Display="Sync failed" /></span>
+                                }
+                                else
+                                {
+                                    <span class="muted">@Formatting.Ago(g.LastSyncAtUtc)</span>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</section>
 
 @code {
     private IReadOnlyList<GroupView>? _groups;
@@ -131,6 +152,7 @@ else
     private string? _message;
     private bool _isError;
     private bool _busy;
+    private bool _showForm;
 
     private ProviderTypeInfo? SelectedType => Catalog.Find(_typeId);
 
@@ -143,6 +165,7 @@ else
         if (Catalog.All.Count > 0)
             SelectType(Catalog.All[0].Id);
         await LoadAsync();
+        _showForm = _groups is { Count: 0 };
     }
 
     private async Task LoadAsync() =>
@@ -169,6 +192,7 @@ else
             var (_, report) = await Runner.RunAsync<AddProviderGroup, (Guid, SyncReport)>(u => u.ExecuteAsync(command, CancellationToken.None));
             (_message, _isError) = ($"Group added. {report}", !report.Succeeded);
             SelectType(_typeId);
+            _showForm = false;
             await LoadAsync();
         }
         catch (Exception ex) when (UserFacingErrors.Matches(ex))

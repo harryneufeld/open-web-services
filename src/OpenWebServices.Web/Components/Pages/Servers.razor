@@ -1,58 +1,73 @@
-@page "/"
+@page "/servers"
 @rendermode InteractiveServer
 @inject UseCaseRunner Runner
 
-<PageTitle>Servers</PageTitle>
-
-<div class="page-head">
-    <h1>Servers</h1>
-    <a class="btn primary" href="/servers/new">New server</a>
-</div>
+<PageTitle>Servers · ows</PageTitle>
 
 <LiveUpdates Topics="[ResourceTopics.Servers, ResourceTopics.Groups]" OnChange="LoadAsync" />
 
+<header class="page-header">
+    <div>
+        <span class="svc-line"><ServiceBadge Service="OwsService.Servers" /><b>@OwsService.Servers.Name</b><span class="tagline"> · @OwsService.Servers.Tagline</span></span>
+        <h1>Servers</h1>
+            </div>
+    <div class="page-actions">
+        <a class="btn btn-primary" href="/servers/new"><Icon Name="plus" />Launch server</a>
+    </div>
+</header>
+
 @if (_error is not null)
 {
-    <p class="alert">@_error</p>
+    <Notice Kind="error">@_error</Notice>
 }
 
-@if (_servers is null)
-{
-    <p>Loading…</p>
-}
-else if (_servers.Count == 0)
-{
-    <p class="muted">No servers yet. Add a provider group under <a href="/groups">Groups</a> to import existing servers, then create new ones here.</p>
-}
-else
-{
-    <table>
-        <thead>
-            <tr><th>Name</th><th>Group</th><th>Location</th><th>Type</th><th>Status</th><th>IPv4</th><th class="num">Net / month</th></tr>
-        </thead>
-        <tbody>
-            @foreach (var view in _servers)
-            {
-                var s = view.Server;
-                <tr>
-                    <td>
-                        <a href="/servers/@s.Id">@s.Name</a>
-                        @if (s.Origin == ServerOrigin.Imported)
-                        {
-                            <span class="tag" title="Found at the provider; not created here">imported</span>
-                        }
-                    </td>
-                    <td>@view.GroupName <span class="muted">@view.ProviderName</span></td>
-                    <td>@s.Location</td>
-                    <td>@s.ServerType</td>
-                    <td><StatusBadge Text="@s.Status.ToString()" Busy="s.IsTransitioning" /></td>
-                    <td>@(s.PublicIpv4 ?? "–")</td>
-                    <td class="num">@Formatting.Money(s.MonthlyPriceNet, s.Currency)</td>
-                </tr>
-            }
-        </tbody>
-    </table>
-}
+<section class="panel">
+    @if (_servers is null)
+    {
+        <SkeletonRows />
+    }
+    else if (_servers.Count == 0)
+    {
+        <EmptyState IconName="server" Title="No servers yet">
+            <ChildContent>Add a provider group to import existing servers, or create a new one from the offers of your groups.</ChildContent>
+            <Actions>
+                <a class="btn" href="/groups">Add provider group</a>
+                <a class="btn btn-primary" href="/servers/new"><Icon Name="plus" />New server</a>
+            </Actions>
+        </EmptyState>
+    }
+    else
+    {
+        <div class="table-wrap">
+            <table class="stack">
+                <thead>
+                    <tr><th>Name</th><th>Status</th><th>Group</th><th>Location</th><th>Type</th><th>Public IPv4</th><th class="num">Monthly, net</th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var view in _servers)
+                    {
+                        var s = view.Server;
+                        <tr>
+                            <td>
+                                <a class="primary-link" href="/servers/@s.Id">@s.Name</a>
+                                @if (s.Origin == ServerOrigin.Imported)
+                                {
+                                    <span class="tag" title="Found at the provider, not created here">Imported</span>
+                                }
+                            </td>
+                            <td data-label="Status"><StatusBadge Text="@s.Status.ToString()" /></td>
+                            <td data-label="Group">@view.GroupName<span class="secondary">@view.ProviderName</span></td>
+                            <td data-label="Location">@s.Location</td>
+                            <td data-label="Type">@s.ServerType</td>
+                            <td data-label="IPv4" class="mono">@(s.PublicIpv4 ?? "–")</td>
+                            <td data-label="Monthly" class="num">@Formatting.Money(s.MonthlyPriceNet, s.Currency)</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</section>
 
 @code {
     private IReadOnlyList<ServerView>? _servers;

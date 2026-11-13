@@ -1,0 +1,10 @@
+@* Inline message: Kind is "error", "success", "warn" or "info". *@
+<div class="callout @Kind" role="@(Kind == "error" ? "alert" : "status")">
+    <Icon Name="@(Kind switch { "error" or "warn" => "alert", "success" => "check", _ => "info" })" />
+    <div>@ChildContent</div>
+</div>
+
+@code {
+    [Parameter] public string Kind { get; set; } = "info";
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

@@ -1,0 +1,241 @@
+@page "/"
+@rendermode InteractiveServer
+@inject UseCaseRunner Runner
+
+<PageTitle>Console home · ows</PageTitle>
+
+<LiveUpdates Topics="[ResourceTopics.Groups, ResourceTopics.Servers, ResourceTopics.DnsZones]" OnChange="LoadAsync" />
+
+<header class="page-header">
+    <div>
+        <h1>Console home</h1>
+        @if (_groups is { Count: > 0 })
+        {
+            <p class="summary">
+                <span><strong>@_servers!.Count</strong> @Plural(_servers.Count, "server", "servers")</span>
+                <span><strong>@_zones!.Count</strong> @Plural(_zones.Count, "DNS zone", "DNS zones")</span>
+                <span><strong>@_groups.Count</strong> provider @Plural(_groups.Count, "group", "groups")</span>
+                <span><strong>@MonthlyTotal(_servers.Select(s => s.Server))</strong> per month, net</span>
+            </p>
+        }
+    </div>
+    <div class="page-actions">
+        <a class="btn" href="/groups"><Icon Name="groups" />Add provider group</a>
+        <a class="btn btn-primary" href="/servers/new"><Icon Name="plus" />Launch server</a>
+    </div>
+</header>
+
+<div class="services">
+    <a class="service" href="/servers">
+        <ServiceBadge Service="OwsService.Servers" Large="true" />
+        <span class="name">OC2 <small>Servers</small></span>
+        <p>@OwsService.Servers.Tagline</p>
+        <span class="meta">@(_servers is null ? "…" : $"{_servers.Count(s => s.Server.Status == ServerStatus.Running)} running · {_servers.Count} total")</span>
+    </a>
+    <a class="service" href="/dns">
+        <ServiceBadge Service="OwsService.Dns" Large="true" />
+        <span class="name">Route 66 <small>DNS</small></span>
+        <p>@OwsService.Dns.Tagline</p>
+        <span class="meta">@(_zones is null ? "…" : $"{_zones.Count} {Plural(_zones.Count, "zone", "zones")} · {_zones.Sum(z => z.Zone.RecordCount ?? 0)} records")</span>
+    </a>
+    <a class="service" href="/groups">
+        <ServiceBadge Service="OwsService.Groups" Large="true" />
+        <span class="name">IOU <small>Provider groups</small></span>
+        <p>@OwsService.Groups.Tagline</p>
+        <span class="meta">@(_groups is null ? "…" : $"{_groups.Count} {Plural(_groups.Count, "group", "groups")} · {string.Join(", ", _groups.Select(g => g.ProviderName).Distinct())}")</span>
+    </a>
+    <div class="service soon">
+        <ServiceBadge Service="OwsService.Storage" Large="true" />
+        <span class="name">S4 <small>Storage</small></span>
+        <p>@OwsService.Storage.Tagline</p>
+        <span class="meta">Coming eventually</span>
+    </div>
+</div>
+
+@if (_groups is null)
+{
+    <section class="panel"><SkeletonRows Count="4" /></section>
+}
+else if (_groups.Count == 0)
+{
+    <section class="panel">
+        <EmptyState IconName="groups" Title="Connect your first provider">
+            <ChildContent>
+                A provider group is one set of credentials at one provider, such as a Hetzner Cloud project token.
+                ows imports its servers and DNS zones and keeps them in sync.
+            </ChildContent>
+            <Actions><a class="btn btn-primary" href="/groups"><Icon Name="plus" />Add provider group</a></Actions>
+        </EmptyState>
+    </section>
+}
+else
+{
+    var attention = Attention().ToList();
+    @if (attention.Count > 0)
+    {
+        <section class="panel" aria-labelledby="attention">
+            <div class="panel-header"><h2 id="attention">Needs attention</h2><span class="tag">@attention.Count</span></div>
+            <ul class="list">
+                @foreach (var item in attention)
+                {
+                    <li>
+                        <Icon Name="alert" Class="@("attention-" + item.Tone)" />
+                        <div class="grow">
+                            <a class="primary-link" href="@item.Href">@item.Title</a>
+                            <span class="subtle">@item.Detail</span>
+                        </div>
+                        <a class="btn btn-sm" href="@item.Href">Open<Icon Name="chevron-right" /></a>
+                    </li>
+                }
+            </ul>
+        </section>
+    }
+    else
+    {
+        <Notice Kind="success">All resources are in sync with their providers. Nothing on fire.</Notice>
+    }
+
+    <section class="panel" aria-labelledby="groups">
+        <div class="panel-header">
+            <h2 id="groups">Provider groups</h2>
+            <a class="btn btn-ghost btn-sm" href="/groups">Manage<Icon Name="chevron-right" /></a>
+        </div>
+        <div class="table-wrap">
+            <table class="stack">
+                <thead>
+                    <tr><th>Group</th><th>Provider</th><th class="num">Servers</th><th class="num">DNS zones</th><th class="num">Monthly, net</th><th>Last sync</th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var view in _groups)
+                    {
+                        var g = view.Group;
+                        <tr>
+                            <td><a class="primary-link" href="/groups/@g.Id">@g.Name</a></td>
+                            <td data-label="Provider">@view.ProviderName</td>
+                            <td data-label="Servers" class="num">@view.ServerCount</td>
+                            <td data-label="DNS zones" class="num">@view.ZoneCount</td>
+                            <td data-label="Monthly" class="num">@MonthlyTotal(_servers!.Where(s => s.Server.GroupId == g.Id).Select(s => s.Server))</td>
+                            <td data-label="Last sync">
+                                @if (g.LastSyncError is not null)
+                                {
+                                    <StatusBadge Text="failed" Display="Sync failed" />
+                                }
+                                else
+                                {
+                                    <span class="muted">@Formatting.Ago(g.LastSyncAtUtc)</span>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <div class="grid-2">
+        <section class="panel" aria-labelledby="servers">
+            <div class="panel-header">
+                <h2 id="servers">Servers</h2>
+                <a class="btn btn-ghost btn-sm" href="/servers">View all<Icon Name="chevron-right" /></a>
+            </div>
+            @if (_servers!.Count == 0)
+            {
+                <EmptyState IconName="server" Title="No servers yet">
+                    <ChildContent>Create one from the offers of your provider groups.</ChildContent>
+                    <Actions><a class="btn" href="/servers/new"><Icon Name="plus" />New server</a></Actions>
+                </EmptyState>
+            }
+            else
+            {
+                <ul class="list">
+                    @foreach (var view in _servers.Take(6))
+                    {
+                        var s = view.Server;
+                        <li>
+                            <div class="grow">
+                                <a class="primary-link" href="/servers/@s.Id">@s.Name</a>
+                                <span class="subtle mono">@(s.PublicIpv4 ?? "no public IP") · @s.Location</span>
+                            </div>
+                            <StatusBadge Text="@s.Status.ToString()" />
+                        </li>
+                    }
+                </ul>
+            }
+        </section>
+
+        <section class="panel" aria-labelledby="zones">
+            <div class="panel-header">
+                <h2 id="zones">DNS zones</h2>
+                <a class="btn btn-ghost btn-sm" href="/dns">View all<Icon Name="chevron-right" /></a>
+            </div>
+            @if (_zones!.Count == 0)
+            {
+                <EmptyState IconName="globe" Title="No DNS zones yet">
+                    <ChildContent>Zones of groups with DNS enabled appear here automatically.</ChildContent>
+                    <Actions><a class="btn" href="/dns"><Icon Name="plus" />Create a zone</a></Actions>
+                </EmptyState>
+            }
+            else
+            {
+                <ul class="list">
+                    @foreach (var view in _zones.Take(6))
+                    {
+                        var z = view.Zone;
+                        <li>
+                            <div class="grow">
+                                <a class="primary-link" href="/dns/@z.Id">@z.Name</a>
+                                <span class="subtle">@(z.RecordCount?.ToString() ?? "–") records · @view.GroupName</span>
+                            </div>
+                            <StatusBadge Text="@(z.DelegationStatus ?? z.Status)" Display="@DelegationLabel(z.DelegationStatus)" />
+                        </li>
+                    }
+                </ul>
+            }
+        </section>
+    </div>
+}
+
+<p class="fineprint">ows · Open Web Services · one console, many providers</p>
+
+@code {
+    private IReadOnlyList<GroupView>? _groups;
+    private IReadOnlyList<ServerView>? _servers;
+    private IReadOnlyList<ZoneView>? _zones;
+
+    private sealed record AttentionItem(string Title, string Detail, string Href, string Tone);
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _servers = await Runner.RunAsync<ServerQueries, IReadOnlyList<ServerView>>(q => q.ListAsync(CancellationToken.None));
+        _zones = await Runner.RunAsync<DnsQueries, IReadOnlyList<ZoneView>>(q => q.ListZonesAsync(CancellationToken.None));
+        _groups = await Runner.RunAsync<GroupQueries, IReadOnlyList<GroupView>>(q => q.ListAsync(CancellationToken.None));
+    }
+
+    private IEnumerable<AttentionItem> Attention()
+    {
+        foreach (var g in _groups!.Where(g => g.Group.LastSyncError is not null))
+            yield return new($"{g.Group.Name}: sync failed", g.Group.LastSyncError!, $"/groups/{g.Group.Id}", "danger");
+        foreach (var s in _servers!.Where(s => s.Server.Status == ServerStatus.Failed))
+            yield return new($"{s.Server.Name} failed", s.Server.FailureReason ?? "The server is in a failed state.", $"/servers/{s.Server.Id}", "danger");
+        foreach (var z in _zones!.Where(z => z.Zone.DelegationStatus is { } d && d != "valid"))
+            yield return new($"{z.Zone.Name}: nameservers not delegated",
+                $"Point the domain at {string.Join(", ", z.Zone.NameserverList)} at your registrar.", $"/dns/{z.Zone.Id}", "warn");
+    }
+
+    private static string MonthlyTotal(IEnumerable<Server> servers)
+    {
+        var totals = servers.GroupBy(s => s.Currency).Select(g => Formatting.Money(g.Sum(s => s.MonthlyPriceNet), g.Key)).ToList();
+        return totals.Count == 0 ? Formatting.Money(0, "EUR") : string.Join(" + ", totals);
+    }
+
+    private static string Plural(int n, string one, string many) => n == 1 ? one : many;
+
+    internal static string DelegationLabel(string? status) => status switch
+    {
+        "valid" => "Delegated",
+        null => "Unknown",
+        _ => char.ToUpperInvariant(status[0]) + status[1..],
+    };
+}

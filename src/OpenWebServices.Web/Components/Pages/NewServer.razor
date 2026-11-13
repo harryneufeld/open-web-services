@@ -3,79 +3,132 @@
 @inject UseCaseRunner Runner
 @inject NavigationManager Navigation
 
-<PageTitle>New server</PageTitle>
+<PageTitle>New server · ows</PageTitle>
 
-<h1>New server</h1>
+<nav class="breadcrumb" aria-label="Breadcrumb"><a href="/servers">Servers</a><Icon Name="chevron-right" /><span>New server</span></nav>
+
+<header class="page-header">
+    <div>
+        <h1>New server</h1>
+        <p>Pick a size from any of your provider groups. Offers are sorted by monthly net price.</p>
+    </div>
+</header>
 
 @if (_error is not null)
 {
-    <p class="alert">@_error</p>
+    <Notice Kind="error">@_error</Notice>
 }
-
 @foreach (var groupError in _groupErrors)
 {
-    <p class="alert">@groupError</p>
+    <Notice Kind="warn">@groupError</Notice>
 }
 
 @if (_offers is null)
 {
-    <p>Loading offers…</p>
+    <section class="panel"><SkeletonRows Count="5" /></section>
 }
 else if (_offers.Count == 0)
 {
-    <p class="muted">No offers available. Add a provider group with servers enabled under <a href="/groups">Groups</a> first.</p>
+    <section class="panel">
+        <EmptyState IconName="server" Title="No offers available">
+            <ChildContent>Add a provider group with servers enabled to see what you can order.</ChildContent>
+            <Actions><a class="btn btn-primary" href="/groups">Add provider group</a></Actions>
+        </EmptyState>
+    </section>
 }
 else
 {
-    <div class="filters">
-        <label>Min. vCPUs
-            <select @bind="_minCpus"><option value="1">1</option><option value="2">2</option><option value="4">4</option><option value="8">8</option></select>
-        </label>
-        <label>Min. RAM (GB)
-            <select @bind="_minMemory"><option value="1">1</option><option value="4">4</option><option value="8">8</option><option value="16">16</option></select>
-        </label>
-        <label class="inline"><input type="checkbox" @bind="_onlyAvailable" /> Only available now</label>
-    </div>
-
-    <table>
-        <thead>
-            <tr><th></th><th>Group</th><th>Location</th><th>Type</th><th>vCPU</th><th>RAM</th><th>Disk</th><th class="num">Net / month</th><th class="num">Gross / month</th></tr>
-        </thead>
-        <tbody>
-            @foreach (var o in FilteredOffers)
+    <section class="panel" aria-labelledby="offers">
+        <div class="panel-header">
+            <h2 id="offers">1. Choose an offer</h2>
+            <span class="subtle">@FilteredOffers.Count() of @_offers.Count offers</span>
+        </div>
+        <div class="toolbar">
+            @if (Groups.Count > 1)
             {
-                <tr class="@(o.Key == _selectedKey ? "selected" : null) @(o.Available ? null : "unavailable")"
-                    @onclick="() => Select(o)">
-                    <td><input type="radio" name="offer" checked="@(o.Key == _selectedKey)" disabled="@(!o.Available)" /></td>
-                    <td>@o.GroupName</td>
-                    <td>@o.LocationCity, @o.Country (@o.Location)</td>
-                    <td>@o.TypeName <span class="muted">@o.CpuKind, @o.Architecture</span></td>
-                    <td>@o.VCpus</td>
-                    <td>@o.MemoryGb GB</td>
-                    <td>@o.DiskGb GB</td>
-                    <td class="num">@Formatting.Money(o.MonthlyNet, o.Currency)</td>
-                    <td class="num">@Formatting.Money(o.MonthlyGross, o.Currency)</td>
-                </tr>
+                <label class="field"><span>Group</span>
+                    <select @bind="_groupFilter">
+                        <option value="">All groups</option>
+                        @foreach (var g in Groups)
+                        {
+                            <option value="@g">@g</option>
+                        }
+                    </select>
+                </label>
             }
-        </tbody>
-    </table>
+            <label class="field"><span>Min. vCPUs</span>
+                <select @bind="_minCpus"><option value="1">1</option><option value="2">2</option><option value="4">4</option><option value="8">8</option><option value="16">16</option></select>
+            </label>
+            <label class="field"><span>Min. memory</span>
+                <select @bind="_minMemory"><option value="1">1 GB</option><option value="4">4 GB</option><option value="8">8 GB</option><option value="16">16 GB</option><option value="32">32 GB</option></select>
+            </label>
+            <label class="check"><input type="checkbox" @bind="_onlyAvailable" />Only available now</label>
+        </div>
+        <div class="table-wrap" style="max-height: 460px">
+            <table class="stack offers">
+                <thead>
+                    <tr><th>Type</th><th>Location</th><th>Group</th><th class="num">vCPU</th><th class="num">Memory</th><th class="num">Disk</th><th class="num">Monthly, net</th><th class="num">Gross</th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var o in FilteredOffers)
+                    {
+                        <tr class="@(o.Available ? "selectable" : "unavailable") @(o.Key == _selectedKey ? "selected" : null)" @onclick="() => Select(o)">
+                            <td><label class="offer-pick"><input type="radio" name="offer" checked="@(o.Key == _selectedKey)" disabled="@(!o.Available)" aria-label="@($"{o.TypeName} in {o.Location}")" /><span><strong>@o.TypeName</strong><span class="secondary">@o.CpuKind · @o.Architecture</span></span></label></td>
+                            <td data-label="Location">@o.LocationCity<span class="secondary">@o.Location · @o.Country</span></td>
+                            <td data-label="Group">@o.GroupName</td>
+                            <td data-label="vCPU" class="num">@o.VCpus</td>
+                            <td data-label="Memory" class="num">@o.MemoryGb GB</td>
+                            <td data-label="Disk" class="num">@o.DiskGb GB</td>
+                            <td data-label="Monthly" class="num"><strong>@Formatting.Money(o.MonthlyNet, o.Currency)</strong></td>
+                            <td data-label="Gross" class="num muted hide-sm">@Formatting.Money(o.MonthlyGross, o.Currency)</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </section>
 
-    <div class="form">
-        <label>Name
-            <input @bind="_name" placeholder="my-server" maxlength="63" />
-        </label>
-        <label>Image
-            <select @bind="_image">
-                @foreach (var image in Images)
+    <section class="panel" aria-labelledby="configure">
+        <div class="panel-header">
+            <h2 id="configure">2. Configure</h2>
+            @if (Selected is { } chosen)
+            {
+                <span class="tag accent">@chosen.TypeName · @chosen.LocationCity · @Formatting.Money(chosen.MonthlyNet, chosen.Currency)/mo</span>
+            }
+        </div>
+        <div class="panel-body">
+            <div class="form-grid">
+                <label class="field"><span>Name</span>
+                    <input @bind="_name" @bind:event="oninput" placeholder="web-1" maxlength="63" />
+                    <span class="hint">Lowercase letters, digits and hyphens.</span>
+                </label>
+                <label class="field"><span>Image</span>
+                    <select @bind="_image">
+                        @foreach (var image in Images)
+                        {
+                            <option value="@image">@image</option>
+                        }
+                    </select>
+                </label>
+            </div>
+        </div>
+        <div class="panel-footer">
+            @if (Selected is null)
+            {
+                <span class="subtle" style="margin-right:auto; align-self:center">Select an offer above.</span>
+            }
+            <button class="btn btn-primary" disabled="@(_busy || Selected is null || string.IsNullOrWhiteSpace(_name))" @onclick="CreateAsync">
+                @if (_busy)
                 {
-                    <option value="@image">@image</option>
+                    <span class="spinner"></span><text>Creating…</text>
                 }
-            </select>
-        </label>
-        <button class="btn primary" disabled="@(_busy || Selected is null || string.IsNullOrWhiteSpace(_name))" @onclick="CreateAsync">
-            @(_busy ? "Creating…" : "Create server")
-        </button>
-    </div>
+                else
+                {
+                    <Icon Name="plus" /><text>Create server</text>
+                }
+            </button>
+        </div>
+    </section>
 }
 
 @code {
@@ -85,6 +138,7 @@ else
     private IReadOnlyList<string> _groupErrors = [];
     private string? _error;
     private string? _selectedKey;
+    private string _groupFilter = "";
     private string _name = "";
     private string _image = Images[0];
     private int _minCpus = 1;
@@ -94,8 +148,11 @@ else
 
     private ServerOffer? Selected => _offers?.FirstOrDefault(o => o.Key == _selectedKey);
 
+    private IReadOnlyList<string> Groups => _offers?.Select(o => o.GroupName).Distinct().Order().ToList() ?? [];
+
     private IEnumerable<ServerOffer> FilteredOffers => _offers!
-        .Where(o => o.VCpus >= _minCpus && o.MemoryGb >= _minMemory && (o.Available || !_onlyAvailable));
+        .Where(o => o.VCpus >= _minCpus && o.MemoryGb >= _minMemory && (o.Available || !_onlyAvailable)
+                    && (_groupFilter.Length == 0 || o.GroupName == _groupFilter));
 
     protected override async Task OnInitializedAsync()
     {

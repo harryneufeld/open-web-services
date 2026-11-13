@@ -3,104 +3,131 @@
 @inject UseCaseRunner Runner
 @inject NavigationManager Navigation
 
-<PageTitle>@(_view?.Group.Name ?? "Group")</PageTitle>
+<PageTitle>@(_view?.Group.Name ?? "Group") · ows</PageTitle>
 
 <LiveUpdates Topics="[ResourceTopics.Groups]" Id="Id" OnChange="LoadAsync" />
 
+<nav class="breadcrumb" aria-label="Breadcrumb"><a href="/groups">Provider groups</a><Icon Name="chevron-right" /><span>@(_view?.Group.Name ?? "…")</span></nav>
+
 @if (_view is null)
 {
-    <p>Loading…</p>
+    <section class="panel"><SkeletonRows Count="2" /></section>
 }
 else
 {
     var group = _view.Group;
-    <div class="page-head">
-        <h1>@group.Name</h1>
-        <a href="/groups">← All groups</a>
-    </div>
+    <header class="page-header">
+        <div>
+            <div class="title-row">
+                <h1>@group.Name</h1>
+                @if (group.LastSyncError is not null)
+                {
+                    <StatusBadge Text="failed" Display="Sync failed" />
+                }
+                else
+                {
+                    <StatusBadge Text="ok" Display="In sync" />
+                }
+            </div>
+            <p>@_view.ProviderName · last sync @Formatting.Ago(group.LastSyncAtUtc)</p>
+        </div>
+        <div class="page-actions">
+            <button class="btn" disabled="@_busy" @onclick="SyncNowAsync">
+                @if (_busy)
+                {
+                    <span class="spinner"></span>
+                }
+                else
+                {
+                    <Icon Name="refresh" />
+                }
+                Sync now
+            </button>
+        </div>
+    </header>
 
-    <dl class="facts">
-        <dt>Provider</dt><dd>@_view.ProviderName</dd>
-        <dt>Servers</dt><dd><a href="/">@_view.ServerCount</a></dd>
-        <dt>DNS zones</dt><dd><a href="/dns">@_view.ZoneCount</a></dd>
-        <dt>Last sync</dt>
-        <dd>
-            @Formatting.Ago(group.LastSyncAtUtc)
-            @if (group.LastSyncError is not null)
-            {
-                <span class="badge failed">failed</span>
-            }
-        </dd>
-    </dl>
     @if (group.LastSyncError is not null)
     {
-        <p class="alert">@group.LastSyncError</p>
+        <Notice Kind="error">@group.LastSyncError</Notice>
     }
-
-    <div class="actions">
-        <button class="btn" disabled="@_busy" @onclick="SyncNowAsync">Sync now</button>
-    </div>
-
-    <h2>Settings</h2>
-    <div class="form stacked narrow">
-        <label>Name
-            <input @bind="_name" maxlength="@ProviderGroup.MaxNameLength" />
-        </label>
-        @if (_view.Type is { } type)
-        {
-            <fieldset>
-                <legend>Sync</legend>
-                @foreach (var kind in ResourceKinds.Split(type.SupportedResources))
-                {
-                    <label class="inline">
-                        <input type="checkbox" checked="@_enabled.HasFlag(kind)" @onchange="e => Toggle(kind, e.Value is true)" />
-                        @ResourceKinds.Label(kind)
-                    </label>
-                }
-                <span class="muted">Turning a kind off keeps its records here but stops refreshing them.</span>
-            </fieldset>
-            <fieldset>
-                <legend>Replace credentials (leave empty to keep)</legend>
-                @foreach (var field in type.CredentialFields)
-                {
-                    <label>@field.Label
-                        <input type="@(field.IsSecret ? "password" : "text")" autocomplete="off"
-                               value="@_credentials.GetValueOrDefault(field.Key)"
-                               @onchange="e => _credentials[field.Key] = e.Value?.ToString() ?? string.Empty" />
-                    </label>
-                }
-            </fieldset>
-        }
-        else
-        {
-            <p class="alert">Provider type '@group.ProviderType' is not available in this version.</p>
-        }
-        <div>
-            <button class="btn primary" disabled="@(_busy || string.IsNullOrWhiteSpace(_name))" @onclick="SaveAsync">Save</button>
-        </div>
-    </div>
-
     @if (_message is not null)
     {
-        <p class="@(_isError ? "alert" : "ok")">@_message</p>
+        <Notice Kind="@(_isError ? "error" : "success")">@_message</Notice>
     }
 
-    <h2>Remove group</h2>
-    <p class="muted">
-        Stops managing this group: its servers and DNS zones disappear from this platform but keep running at the provider.
-        SSH keys of servers created here are deleted with them.
-    </p>
-    @if (_confirmRemove)
-    {
-        <div class="actions">
-            <button class="btn danger" disabled="@_busy" @onclick="RemoveAsync">Really remove “@group.Name”?</button>
-            <button class="btn" @onclick="() => _confirmRemove = false">Cancel</button>
+    <section class="panel" aria-labelledby="resources">
+        <div class="panel-header"><h2 id="resources">Resources</h2></div>
+        <div class="panel-body">
+            <dl class="facts">
+                <div><dt>Servers</dt><dd><a href="/servers">@_view.ServerCount</a></dd></div>
+                <div><dt>DNS zones</dt><dd><a href="/dns">@_view.ZoneCount</a></dd></div>
+                <div><dt>Syncs</dt><dd>@string.Join(", ", ResourceKinds.Split(group.EnabledResources).Select(ResourceKinds.Label))</dd></div>
+                <div><dt>Added</dt><dd>@group.CreatedAtUtc.ToString("yyyy-MM-dd")</dd></div>
+            </dl>
         </div>
-    }
-    else
-    {
-        <button class="btn danger" @onclick="() => _confirmRemove = true">Remove group</button>
-    }
+    </section>
+
+    <section class="panel" aria-labelledby="settings">
+        <div class="panel-header"><h2 id="settings">Settings</h2></div>
+        <div class="panel-body">
+            <div class="form-stack">
+                <label class="field"><span>Name</span>
+                    <input @bind="_name" @bind:event="oninput" maxlength="@ProviderGroup.MaxNameLength" />
+                </label>
+                @if (_view.Type is { } type)
+                {
+                    <div class="field">
+                        <span class="field-label">Sync</span>
+                        <div class="choice-group">
+                            @foreach (var kind in ResourceKinds.Split(type.SupportedResources))
+                            {
+                                <label class="check">
+                                    <input type="checkbox" checked="@_enabled.HasFlag(kind)" @onchange="e => Toggle(kind, e.Value is true)" />
+                                    @ResourceKinds.Label(kind)
+                                </label>
+                            }
+                        </div>
+                        <span class="hint">Turning a kind off keeps its records in ows but stops refreshing them.</span>
+                    </div>
+                    @foreach (var field in type.CredentialFields)
+                    {
+                        <label class="field"><span>New @field.Label.ToLowerInvariant()</span>
+                            <input type="@(field.IsSecret ? "password" : "text")" autocomplete="off" spellcheck="false" placeholder="Leave empty to keep the current one"
+                                   value="@_credentials.GetValueOrDefault(field.Key)"
+                                   @oninput="e => _credentials[field.Key] = e.Value?.ToString() ?? string.Empty" />
+                        </label>
+                    }
+                }
+                else
+                {
+                    <Notice Kind="warn">Provider type “@group.ProviderType” is not available in this version of ows.</Notice>
+                }
+            </div>
+        </div>
+        <div class="panel-footer">
+            <button class="btn btn-primary" disabled="@(_busy || string.IsNullOrWhiteSpace(_name))" @onclick="SaveAsync">Save changes</button>
+        </div>
+    </section>
+
+    <section class="panel danger" aria-labelledby="remove">
+        <div class="panel-header">
+            <div>
+                <h2 id="remove">Remove group</h2>
+                <p>Stops managing this group. Its servers and zones keep running at the provider, but SSH keys of servers created in ows are deleted.</p>
+            </div>
+            @if (_confirmRemove)
+            {
+                <div class="page-actions">
+                    <button class="btn" @onclick="() => _confirmRemove = false">Cancel</button>
+                    <button class="btn btn-danger-solid" disabled="@_busy" @onclick="RemoveAsync">Remove @group.Name</button>
+                </div>
+            }
+            else
+            {
+                <button class="btn btn-danger" @onclick="() => _confirmRemove = true">Remove…</button>
+            }
+        </div>
+    </section>
 }
 
 @code {

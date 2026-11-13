@@ -1,6 +1,12 @@
-﻿@page "/not-found"
+@page "/not-found"
 @layout MainLayout
 @attribute [AllowAnonymous]
 
-<h3>Not Found</h3>
-<p>Sorry, the content you are looking for does not exist.</p>
+<PageTitle>Not found · ows</PageTitle>
+
+<div class="panel">
+    <EmptyState IconName="alert" Title="Page not found">
+        <ChildContent>The page you were looking for does not exist or was removed.</ChildContent>
+        <Actions><a class="btn" href="/">Back to overview</a></Actions>
+    </EmptyState>
+</div>

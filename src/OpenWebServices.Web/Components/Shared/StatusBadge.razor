@@ -1,12 +1,25 @@
-@* A status pill; transitional states get a small spinner so pending actions are visible. *@
-<span class="badge @Css">@if (Busy)
+@* Status with a coloured dot; transitional states show a spinner so pending work is visible. *@
+<span class="status @Tone">@if (Tone == "busy")
     {
         <span class="spinner" aria-hidden="true"></span>
-    }@Text</span>
+    }@Label</span>
 
 @code {
-    [Parameter, EditorRequired] public string Text { get; set; } = "";
-    [Parameter] public bool Busy { get; set; }
+    private static readonly HashSet<string> Ok = ["running", "ok", "installed", "valid"];
+    private static readonly HashSet<string> Danger = ["failed", "error", "invalid"];
+    private static readonly HashSet<string> Busy = ["provisioning", "starting", "stopping", "deleting", "pending", "installing", "updating"];
 
-    private string Css => Text.ToLowerInvariant();
+    [Parameter, EditorRequired] public string Text { get; set; } = "";
+
+    /// <summary>Overrides the label shown; the tone still comes from <see cref="Text"/>.</summary>
+    [Parameter] public string? Display { get; set; }
+
+    private string Key => Text.ToLowerInvariant();
+    private string Label => Display ?? (Text.Length == 0 ? "Unknown" : char.ToUpperInvariant(Text[0]) + Text[1..]);
+
+    private string Tone =>
+        Ok.Contains(Key) ? "ok"
+        : Danger.Contains(Key) ? "danger"
+        : Busy.Contains(Key) ? "busy"
+        : "neutral";
 }

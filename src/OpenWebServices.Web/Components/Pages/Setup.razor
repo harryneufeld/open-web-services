@@ -3,25 +3,29 @@
 @inject UseCaseRunner Runner
 @inject NavigationManager Navigation
 
-<PageTitle>Setup</PageTitle>
+<PageTitle>Set up · ows</PageTitle>
 
 <div class="auth-card">
-    <h1>Create the admin account</h1>
-    <p class="muted">First-run setup. This page disappears once an account exists.</p>
-
-    @if (Error is not null)
-    {
-        <p class="alert">@Error</p>
-    }
-
-    <form method="post" action="/auth/setup" class="form stacked">
-        <AntiforgeryToken />
-        <label>Username <input name="username" autocomplete="username" minlength="3" maxlength="64" required autofocus /></label>
-        <label>Password (min. @RegisterFirstAdmin.MinPasswordLength characters)
-            <input name="password" type="password" autocomplete="new-password" minlength="@RegisterFirstAdmin.MinPasswordLength" required />
-        </label>
-        <button class="btn primary" type="submit">Create account</button>
-    </form>
+    <span class="brand"><BrandMark /></span>
+    <div class="panel">
+        <form method="post" action="/auth/setup" class="panel-body">
+            <div>
+                <h1>Create the admin account</h1>
+                <p class="muted">First-run setup. This page disappears once an account exists.</p>
+            </div>
+            @if (Error is not null)
+            {
+                <Notice Kind="error">@Error</Notice>
+            }
+            <AntiforgeryToken />
+            <label class="field"><span>Username</span><input name="username" autocomplete="username" minlength="3" maxlength="64" required autofocus /></label>
+            <label class="field"><span>Password</span>
+                <input name="password" type="password" autocomplete="new-password" minlength="@RegisterFirstAdmin.MinPasswordLength" required />
+                <span class="hint">At least @RegisterFirstAdmin.MinPasswordLength characters.</span>
+            </label>
+            <button class="btn btn-primary btn-block" type="submit">Create account</button>
+        </form>
+    </div>
 </div>
 
 @code {

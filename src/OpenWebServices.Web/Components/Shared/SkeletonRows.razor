@@ -1,0 +1,14 @@
+<div class="skeleton" aria-busy="true" aria-label="Loading">
+    @for (var i = 0; i < Count; i++)
+    {
+        <div class="skeleton-row">
+            <div class="skeleton-bar" style="width: @(28 - i * 3)%"></div>
+            <div class="skeleton-bar" style="width: 14%"></div>
+            <div class="skeleton-bar" style="width: 18%"></div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public int Count { get; set; } = 3;
+}
