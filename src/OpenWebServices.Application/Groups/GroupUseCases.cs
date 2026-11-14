@@ -12,14 +12,16 @@ public sealed record AddProviderGroupCommand(
     IReadOnlyDictionary<string, string> Credentials,
     ResourceKind EnabledResources);
 
-/// <param name="NewCredentials">Null or all-blank keeps the stored credentials.</param>
+/// <param name="NewCredentials">Blank or missing fields keep their stored values.</param>
 public sealed record UpdateProviderGroupCommand(
     Guid GroupId,
     string Name,
     ResourceKind EnabledResources,
     IReadOnlyDictionary<string, string>? NewCredentials);
 
-public sealed record GroupView(ProviderGroup Group, ProviderTypeInfo? Type, int ServerCount, int ZoneCount)
+/// <param name="Credentials">Masked stored credentials; only filled for a single group viewed by an admin.</param>
+public sealed record GroupView(
+    ProviderGroup Group, ProviderTypeInfo? Type, int ServerCount, int ZoneCount, IReadOnlyList<MaskedCredential>? Credentials = null)
 {
     public string ProviderName => Type?.DisplayName ?? Group.ProviderType;
 }
@@ -75,7 +77,15 @@ public sealed class UpdateProviderGroup(
 
         if (command.NewCredentials is { } input && input.Values.Any(v => !string.IsNullOrWhiteSpace(v)))
         {
-            var credentials = CredentialInput.Validate(type, input);
+            // Fields left blank keep their stored value, so one rotated key can be replaced on its own.
+            var stored = GroupCredentials.Deserialize(
+                secrets.Unprotect(group.EncryptedCredentials, group.TenantId, SecretPurposes.ProviderCredentials));
+            var merged = type.CredentialFields.ToDictionary(
+                field => field.Key,
+                field => input.GetValueOrDefault(field.Key) is { } value && !string.IsNullOrWhiteSpace(value)
+                    ? value
+                    : stored.GetValueOrDefault(field.Key) ?? "");
+            var credentials = CredentialInput.Validate(type, merged);
             await connections.Connect(type.Id, credentials).VerifyAsync(ct);
             group.ReplaceCredentials(
                 secrets.Protect(GroupCredentials.Serialize(credentials), group.TenantId, SecretPurposes.ProviderCredentials),
@@ -109,10 +119,12 @@ public sealed class RemoveProviderGroup(
 }
 
 public sealed class GroupQueries(
+    AccessContext access,
     IProviderGroupRepository groups,
     IServerRepository servers,
     IDnsZoneRepository zones,
-    IProviderCatalog catalog)
+    IProviderCatalog catalog,
+    ISecretProtector secrets)
 {
     public async Task<IReadOnlyList<GroupView>> ListAsync(CancellationToken ct)
     {
@@ -124,8 +136,26 @@ public sealed class GroupQueries(
             g, catalog.Find(g.ProviderType), serverCounts.GetValueOrDefault(g.Id), zoneCounts.GetValueOrDefault(g.Id)))];
     }
 
-    public async Task<GroupView> GetAsync(Guid groupId, CancellationToken ct) =>
-        (await ListAsync(ct)).FirstOrDefault(v => v.Group.Id == groupId) ?? throw new NotFoundException("Provider group");
+    public async Task<GroupView> GetAsync(Guid groupId, CancellationToken ct)
+    {
+        var view = (await ListAsync(ct)).FirstOrDefault(v => v.Group.Id == groupId) ?? throw new NotFoundException("Provider group");
+        return view.Type is { } type && access.Can(TenantRole.Admin) && view.Group.HasCredentials
+            ? view with { Credentials = MaskStored(view.Group, type) }
+            : view;
+    }
+
+    private IReadOnlyList<MaskedCredential> MaskStored(ProviderGroup group, ProviderTypeInfo type)
+    {
+        try
+        {
+            var stored = secrets.Unprotect(group.EncryptedCredentials, group.TenantId, SecretPurposes.ProviderCredentials);
+            return GroupCredentials.Mask(type, GroupCredentials.Deserialize(stored));
+        }
+        catch (System.Security.Cryptography.CryptographicException)
+        {
+            return []; // unreadable with the current keys; the page then only offers to replace them
+        }
+    }
 }
 
 internal static class CredentialInput

@@ -10,6 +10,7 @@ using OpenWebServices.Application.Abstractions;
 using OpenWebServices.Infrastructure.Background;
 using OpenWebServices.Infrastructure.Hetzner;
 using OpenWebServices.Infrastructure.Identity;
+using OpenWebServices.Infrastructure.Ovh;
 using OpenWebServices.Infrastructure.Persistence;
 using OpenWebServices.Infrastructure.Providers;
 using OpenWebServices.Infrastructure.Security;
@@ -48,6 +49,8 @@ public static class DependencyInjection
             client.Timeout = TimeSpan.FromSeconds(30);
         });
         services.AddSingleton<IProviderConnector, HetznerConnector>();
+        services.AddHttpClient(OvhConnector.HttpClientName, client => client.Timeout = TimeSpan.FromSeconds(30));
+        services.AddSingleton<IProviderConnector, OvhConnector>();
 
         services.AddSingleton<ProviderCatalog>();
         services.AddSingleton<IProviderCatalog>(sp => sp.GetRequiredService<ProviderCatalog>());

@@ -46,9 +46,16 @@ fi
 echo "==> Installing application files"
 systemctl stop open-web-services 2>/dev/null || true
 find "$APP_DIR" -mindepth 1 -delete
-tar -xzf "$ARCHIVE" -C "$APP_DIR"
-chmod +x "$APP_DIR/OpenWebServices.Web"
+tar -xzf "$ARCHIVE" -C "$APP_DIR" --no-same-owner --no-same-permissions
+# Archives packed on Windows carry world-writable modes; the service must not be able to change its own code.
 chown -R root:root "$APP_DIR"
+find "$APP_DIR" -type d -exec chmod 755 {} +
+find "$APP_DIR" -type f -exec chmod 644 {} +
+chmod 755 "$APP_DIR/OpenWebServices.Web"
+[ -f "$APP_DIR/createdump" ] && chmod 755 "$APP_DIR/createdump"
+# Write the new files out before starting: on SD cards the pending writeback otherwise stalls PostgreSQL's
+# commits past the app's 30 s command timeout and the first start after an update crashes.
+sync
 
 echo "==> Installing systemd service"
 cat > /etc/systemd/system/open-web-services.service <<EOF
@@ -72,7 +79,7 @@ systemctl daemon-reload
 systemctl enable --now open-web-services
 
 echo "==> Waiting for the app to answer"
-for _ in $(seq 1 30); do
+for _ in $(seq 1 60); do
   code="$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:${PORT}/login" || true)"
   if [ "$code" = "200" ] || [ "$code" = "302" ]; then
     echo "OK: http://$(hostname -I | awk '{print $1}'):${PORT}  (HTTP ${code})"
