@@ -8,7 +8,7 @@
   </PropertyGroup>
 
   <!-- Version = "version" from version.json + the number of commits since it last changed, e.g. 0.1.12.
-       Builds on branches other than main add the commit hash (0.1.12-g1a2b3c4d). Needs the full git history. -->
+       The commit id is kept as build metadata (0.1.12+1a2b3c4d5e). Needs the full git history. -->
   <ItemGroup>
     <PackageReference Include="Nerdbank.GitVersioning" Version="3.7.115" PrivateAssets="all" />
   </ItemGroup>
