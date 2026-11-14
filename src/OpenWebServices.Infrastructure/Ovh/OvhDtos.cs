@@ -1,6 +1,6 @@
 namespace OpenWebServices.Infrastructure.Ovh;
 
-// OVHcloud API v1 wire models. Property matching is case-insensitive in OvhApiClient.
+// OVHcloud API v1 wire models (schema: https://eu.api.ovh.com/1.0/cloud.json). Property matching is case-insensitive.
 
 internal sealed record OvhFlavor(
     string Id,
@@ -13,9 +13,9 @@ internal sealed record OvhFlavor(
     OvhFlavorPlanCodes? PlanCodes,
     bool? Available);
 
-internal sealed record OvhFlavorPlanCodes(string? Hourly, string? Monthly, string? License);
+internal sealed record OvhFlavorPlanCodes(string? Hourly);
 
-internal sealed record OvhImage(string Id, string Name, string? OsType, string? Region, string? Status);
+internal sealed record OvhImage(string Id, string Name, string? Status);
 
 internal sealed record OvhIpAddress(string Ip, string? Type, long? Version);
 
@@ -28,7 +28,6 @@ internal sealed record OvhInstance(
     OvhImage? Image,
     List<OvhIpAddress>? IpAddresses,
     string? ImageId,
-    string? ImageName,
     string? PlanCode);
 
 internal sealed record OvhCreateSshKey(string Name, string PublicKey);
@@ -45,6 +44,16 @@ internal sealed record OvhCreateInstance(
     bool MonthlyBilling = false);
 
 internal sealed record OvhInstanceReboot(string Type);
+
+// Public order catalog (order/catalog/public/cloud). Prices are in 1e-8 units of the locale currency.
+
+internal sealed record OvhCatalog(OvhCatalogLocale Locale, List<OvhCatalogAddon> Addons);
+
+internal sealed record OvhCatalogLocale(string CurrencyCode);
+
+internal sealed record OvhCatalogAddon(string PlanCode, List<OvhCatalogPricing> Pricings);
+
+internal sealed record OvhCatalogPricing(string IntervalUnit, decimal Price, decimal Tax);
 
 internal sealed record OvhDnsZone(string Name, string? Status, List<string>? NameServers, int? RecordCount);
 

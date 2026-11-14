@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using OpenWebServices.Application.Abstractions;
 using OpenWebServices.Application.Groups;
 using OpenWebServices.Domain.Providers;
@@ -5,7 +6,7 @@ using OpenWebServices.Domain.Providers;
 namespace OpenWebServices.Infrastructure.Ovh;
 
 /// <summary>OVHcloud API v1 connector for Public Cloud instances and DNS records.</summary>
-internal sealed class OvhConnector(IHttpClientFactory httpClients) : IProviderConnector
+internal sealed class OvhConnector(IHttpClientFactory httpClients, ILogger<OvhApiClient> logger) : IProviderConnector
 {
     public const string ProviderType = "ovh";
     public const string HttpClientName = "ovh";
@@ -27,8 +28,10 @@ internal sealed class OvhConnector(IHttpClientFactory httpClients) : IProviderCo
         ProviderType,
         "OVHcloud",
         "Uses OVHcloud API v1 credentials for an account and Public Cloud project. Create an application key, " +
-        "application secret, and consumer key with access to Public Cloud instances and DNS zones. DNS zones " +
-        "must already exist in OVHcloud; this connector manages their records.",
+        "application secret, and consumer key. The consumer key needs GET /me; GET, POST and DELETE on " +
+        "/cloud/project/{id}/region, /flavor, /image, /instance, /instance/* and /sshkey; and GET, POST, PUT and " +
+        "DELETE on /domain/zone/* (full list in docs/ovh.md). DNS zones must already exist in OVHcloud; this " +
+        "connector manages their records.",
         ResourceKind.Servers | ResourceKind.Dns,
         [
             new CredentialField(EndpointKey, "API endpoint (ovh-eu, ovh-ca, or ovh-us)", IsSecret: false,
@@ -53,16 +56,18 @@ internal sealed class OvhConnector(IHttpClientFactory httpClients) : IProviderCo
         var consumerKey = Required(credentials, ConsumerKey, "consumer key");
         var projectId = Required(credentials, ProjectIdKey, "Public Cloud project ID");
         var subsidiary = Required(credentials, SubsidiaryKey, "subsidiary").ToUpperInvariant();
+        if (subsidiary.Length != 2 || !subsidiary.All(char.IsAsciiLetter))
+            throw new ProviderException("The OVHcloud subsidiary must be a two-letter country code, such as FR or DE.");
         var http = httpClients.CreateClient(HttpClientName);
         http.BaseAddress = new Uri(baseAddress);
 
-        var api = new OvhApiClient(http, applicationKey, applicationSecret, consumerKey);
+        var api = new OvhApiClient(http, logger, applicationKey, applicationSecret, consumerKey);
         return new Connection(Type, api, projectId, subsidiary, endpoint);
     }
 
     private static string Required(IReadOnlyDictionary<string, string> credentials, string key, string label) =>
-        !string.IsNullOrWhiteSpace(credentials.GetValueOrDefault(key))
-            ? credentials[key].Trim()
+        credentials.GetValueOrDefault(key) is { } value && !string.IsNullOrWhiteSpace(value)
+            ? value.Trim()
             : throw new ProviderException($"The OVHcloud {label} is missing.");
 
     private sealed class Connection(ProviderTypeInfo type, OvhApiClient api, string projectId, string subsidiary, string endpoint) : IProviderConnection

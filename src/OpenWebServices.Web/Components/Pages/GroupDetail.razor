@@ -91,10 +91,16 @@ else
                     </div>
                     @foreach (var field in type.CredentialFields)
                     {
-                        <label class="field"><span>New @field.Label.ToLowerInvariant()</span>
-                            <input type="@(field.IsSecret ? "password" : "text")" autocomplete="off" spellcheck="false" placeholder="Leave empty to keep the current one"
+                        var current = _view.Credentials?.FirstOrDefault(c => c.Key == field.Key)?.Display;
+                        <label class="field"><span>@field.Label</span>
+                            <input type="@(field.IsSecret ? "password" : "text")" autocomplete="off" spellcheck="false"
+                                   placeholder="@(current is null ? "Not set" : "Leave empty to keep the current value")"
                                    value="@_credentials.GetValueOrDefault(field.Key)"
                                    @oninput="e => _credentials[field.Key] = e.Value?.ToString() ?? string.Empty" />
+                            @if (current is not null)
+                            {
+                                <span class="hint">Current: <code>@current</code></span>
+                            }
                         </label>
                     }
                 }
