@@ -25,6 +25,7 @@
     --ok-soft: oklch(0.6 0.13 155 / 0.12);
     --warn: oklch(0.55 0.12 70);
     --warn-soft: oklch(0.75 0.14 75 / 0.16);
+    --warn-text: oklch(0.46 0.1 65);
     --danger: oklch(0.53 0.19 27);
     --danger-hover: oklch(0.47 0.19 27);
     --danger-soft: oklch(0.6 0.2 27 / 0.1);
@@ -67,6 +68,7 @@
         --ok-soft: oklch(0.7 0.14 155 / 0.14);
         --warn: oklch(0.8 0.13 80);
         --warn-soft: oklch(0.75 0.14 75 / 0.14);
+        --warn-text: oklch(0.82 0.12 80);
         --danger: oklch(0.72 0.16 25);
         --danger-hover: oklch(0.66 0.18 25);
         --danger-soft: oklch(0.65 0.19 25 / 0.15);
@@ -503,6 +505,28 @@ a.service:hover { text-decoration: none; border-color: var(--border-strong); box
 .offer-pick { display: flex; align-items: center; gap: 10px; cursor: inherit; }
 .offer-pick > span { display: flex; flex-direction: column; }
 .offer-pick .secondary { margin-left: 0 !important; }
+.pager {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 12px 8px 16px;
+    border-top: 1px solid var(--border); font-size: 0.8125rem; color: var(--text-2); font-variant-numeric: tabular-nums;
+}
+.pager:last-child { border-radius: 0 0 var(--radius-lg) var(--radius-lg); }
+.pager-controls { display: flex; align-items: center; gap: 4px; }
+.pager-page { min-width: 8ch; text-align: center; color: var(--text); }
+.pager .btn:disabled { opacity: 0.4; }
+.offer-name { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; }
+
+/* Billing options other than pay-as-you-go: the same tag marks the offer and the note that explains it. */
+.tag.billing { height: 18px; gap: 5px; padding: 0 3px 0 7px; border-color: transparent; background: var(--warn-soft); color: var(--warn-text); font-weight: 550; }
+.tag-ref {
+    display: inline-grid; place-items: center; min-width: 14px; height: 14px; padding: 0 3px; border-radius: 999px;
+    background: color-mix(in oklch, currentColor 18%, transparent); font-size: 0.625rem; font-weight: 650; font-variant-numeric: tabular-nums;
+}
+.offer-notes {
+    display: grid; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--border); background: var(--surface-2);
+    border-radius: 0 0 var(--radius-lg) var(--radius-lg); font-size: 0.8125rem; color: var(--text-2);
+}
+.offer-notes p { display: flex; align-items: flex-start; gap: 10px; margin: 0; max-width: 90ch; }
+.offer-notes .tag { flex: none; margin-top: 1px; }
 
 .primary-link { color: var(--text); font-weight: 550; }
 .primary-link:hover { color: var(--accent-text); }

@@ -9,6 +9,21 @@ public static class Formatting
     public static string Money(decimal amount, string currency) =>
         string.Create(German, $"{amount:N2} {(currency == "EUR" ? "€" : currency)}");
 
+    /// <summary>English name of an ISO country code ("DE" → "Germany"), or the code when it is unknown.</summary>
+    public static string Country(string code)
+    {
+        if (string.IsNullOrWhiteSpace(code))
+            return "Unknown";
+        try
+        {
+            return new RegionInfo(code).EnglishName;
+        }
+        catch (ArgumentException)
+        {
+            return code;
+        }
+    }
+
     /// <summary>"just now", "5 min ago", "3 h ago", or a date for anything older than a day.</summary>
     public static string Ago(DateTime? utc)
     {

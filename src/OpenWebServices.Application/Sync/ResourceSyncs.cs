@@ -13,7 +13,8 @@ public sealed class ServerInventorySync(IServerRepository servers, IClock clock)
 
     public async Task<SyncResult> SyncAsync(ProviderGroup group, IProviderConnection connection, CancellationToken ct)
     {
-        var remote = await connection.RequireServers().ListServersAsync(ct);
+        var provider = connection.RequireServers();
+        var remote = await provider.ListServersAsync(ct);
         var local = await servers.ListByGroupAsync(group.Id, ct);
         var known = local.Where(s => s.ExternalId is not null).ToDictionary(s => s.ExternalId!);
         int added = 0, updated = 0, removed = 0;
@@ -37,7 +38,14 @@ public sealed class ServerInventorySync(IServerRepository servers, IClock clock)
         var remoteIds = remote.Select(r => r.ExternalId).ToHashSet();
         foreach (var server in known.Values.Where(s => !remoteIds.Contains(s.ExternalId!) && s.Status != ServerStatus.Deleting))
         {
-            if (server.Origin == ServerOrigin.Imported)
+            // Provider lists can lag behind (OVHcloud lists a new instance only after a few seconds), so a server
+            // missing from the list is looked up directly; only a definite "not found" counts as gone.
+            if (await provider.GetServerAsync(server.ExternalId!, ct) is { } direct)
+            {
+                server.ApplyObserved(direct.State, direct.Ipv4, clock.UtcNow);
+                updated++;
+            }
+            else if (server.Origin == ServerOrigin.Imported)
             {
                 servers.Remove(server); // deleted outside the platform: mirror that
                 removed++;

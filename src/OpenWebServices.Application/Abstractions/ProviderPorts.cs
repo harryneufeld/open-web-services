@@ -9,12 +9,16 @@ public sealed record CredentialField(string Key, string Label, bool IsSecret = t
 /// Describes a provider type (Hetzner Cloud, AWS, OVH, ...): what it can manage and which credentials a group
 /// of this type needs. The UI renders the "add group" form from this, so new providers need no UI changes.
 /// </summary>
+/// <param name="HasCommitmentOffers">
+/// The provider also lists offers with a billing commitment (see <see cref="OfferBilling"/>), so groups can hide them.
+/// </param>
 public sealed record ProviderTypeInfo(
     string Id,
     string DisplayName,
     string Description,
     ResourceKind SupportedResources,
-    IReadOnlyList<CredentialField> CredentialFields);
+    IReadOnlyList<CredentialField> CredentialFields,
+    bool HasCommitmentOffers = false);
 
 /// <summary>A live, authenticated connection to one provider group. Capabilities are null when unsupported.</summary>
 public interface IProviderConnection
