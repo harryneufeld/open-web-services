@@ -72,6 +72,12 @@ else
         </div>
     </section>
 
+    @if (server.ExternalId is not null && server.Status != ServerStatus.Deleting)
+    {
+        <ServerNetworkingPanel ServerId="Id" />
+        <ServerFirewallPanel ServerId="Id" />
+    }
+
     <section class="panel" aria-labelledby="apps">
         <div class="panel-header">
             <div>

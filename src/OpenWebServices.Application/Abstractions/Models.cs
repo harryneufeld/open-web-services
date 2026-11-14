@@ -34,7 +34,74 @@ public sealed record ServerOffer(
     /// </summary>
     public OfferBilling? Billing { get; init; }
 
+    /// <summary>Which product line the size belongs to and what the provider promises for it.</summary>
+    public OfferTier Tier { get; init; } = OfferTier.Unknown;
+
     public string Key => $"{GroupId:N}/{Location}/{TypeName}/{Billing?.Id}";
+}
+
+/// <summary>Provider-neutral product lines, so offers from different providers can be filtered side by side.</summary>
+public enum ServerCategory
+{
+    Other = 0,
+
+    /// <summary>Shared vCPUs at the lowest price.</summary>
+    SharedBudget,
+
+    /// <summary>Shared vCPUs on faster hardware with more consistent performance.</summary>
+    SharedPerformance,
+
+    /// <summary>Dedicated vCPUs or guaranteed resources for sustained load.</summary>
+    Dedicated,
+
+    ComputeOptimized,
+    MemoryOptimized,
+    StorageOptimized,
+    Gpu,
+}
+
+/// <param name="ProductLine">The provider's own name for the line, e.g. "Regular Performance".</param>
+/// <param name="AvailabilitySla">Monthly availability the provider's SLA commits to, in percent; null when unknown.</param>
+public sealed record OfferTier(ServerCategory Category, string ProductLine, decimal? AvailabilitySla)
+{
+    public static readonly OfferTier Unknown = new(ServerCategory.Other, "", null);
+}
+
+public static class ServerCategories
+{
+    public static IReadOnlyList<ServerCategory> All { get; } =
+    [
+        ServerCategory.SharedBudget, ServerCategory.SharedPerformance, ServerCategory.Dedicated,
+        ServerCategory.ComputeOptimized, ServerCategory.MemoryOptimized, ServerCategory.StorageOptimized,
+        ServerCategory.Gpu, ServerCategory.Other,
+    ];
+
+    public static string Label(ServerCategory category) => category switch
+    {
+        ServerCategory.SharedBudget => "Shared, budget",
+        ServerCategory.SharedPerformance => "Shared, performance",
+        ServerCategory.Dedicated => "Dedicated",
+        ServerCategory.ComputeOptimized => "Compute-optimized",
+        ServerCategory.MemoryOptimized => "Memory-optimized",
+        ServerCategory.StorageOptimized => "Storage-optimized",
+        ServerCategory.Gpu => "GPU",
+        _ => "Other",
+    };
+
+    public static string Describe(ServerCategory category) => category switch
+    {
+        ServerCategory.SharedBudget =>
+            "vCPUs shared with other customers at the lowest price. Fine for small sites, dev and test; performance can vary.",
+        ServerCategory.SharedPerformance =>
+            "Shared vCPUs on faster hardware, with more consistent performance than the budget line.",
+        ServerCategory.Dedicated =>
+            "Dedicated vCPUs or guaranteed resources. For production workloads with sustained CPU load.",
+        ServerCategory.ComputeOptimized => "Dedicated, high-frequency CPUs for CPU-bound work such as builds or encoding.",
+        ServerCategory.MemoryOptimized => "More memory per vCPU, for databases and caches.",
+        ServerCategory.StorageOptimized => "Fast local NVMe storage with high IOPS.",
+        ServerCategory.Gpu => "With GPUs, for machine learning, rendering and transcoding.",
+        _ => "Product lines ows cannot classify yet.",
+    };
 }
 
 /// <summary>A billing option other than pay-as-you-go.</summary>

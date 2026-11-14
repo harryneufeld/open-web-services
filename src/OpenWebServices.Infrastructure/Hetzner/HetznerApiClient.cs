@@ -47,9 +47,9 @@ internal sealed class HetznerApiClient(HttpClient http, string token)
         return body is null ? null : JsonSerializer.Deserialize<T>(body, Json);
     }
 
-    public async Task<T> PostAsync<T>(string path, object? payload, CancellationToken ct)
+    public async Task<T> PostAsync<T>(string path, object? payload, CancellationToken ct, bool includeNulls = false)
     {
-        var body = await SendAsync(HttpMethod.Post, path, payload, ct)
+        var body = await SendAsync(HttpMethod.Post, path, payload, ct, serializer: includeNulls ? JsonWithNulls : Json)
                    ?? throw new ProviderException($"Hetzner returned no data for '{path}'.");
         return JsonSerializer.Deserialize<T>(body, Json)
                ?? throw new ProviderException($"Hetzner returned an empty response for '{path}'.");
@@ -66,6 +66,34 @@ internal sealed class HetznerApiClient(HttpClient http, string token)
 
     public Task DeleteAsync(string path, CancellationToken ct) =>
         SendAsync(HttpMethod.Delete, path, null, ct, allowNotFound: true);
+
+    /// <summary>
+    /// Waits until an asynchronous Hetzner action finished, e.g. adding a subnet before a server can join it.
+    /// Throws when the action failed or does not finish within <paramref name="timeout"/> (default 60 s).
+    /// </summary>
+    public async Task WaitAsync(HetznerAction action, CancellationToken ct, TimeSpan? timeout = null)
+    {
+        var deadline = DateTime.UtcNow + (timeout ?? TimeSpan.FromSeconds(60));
+        for (var current = action; ; )
+        {
+            switch (current.Status)
+            {
+                case "success":
+                    return;
+                case "error":
+                    throw new ProviderException($"Hetzner could not complete the change: {current.Error?.Message ?? current.Error?.Code ?? "no details"}");
+            }
+
+            if (DateTime.UtcNow > deadline)
+                throw new ProviderException("Hetzner is still working on the change. Reload the page in a moment.");
+            await Task.Delay(ActionPollInterval, ct);
+            current = (await GetAsync<HetznerActionEnvelope>($"actions/{current.Id}", ct))?.Action
+                      ?? throw new ProviderException($"Hetzner action {current.Id} disappeared.");
+        }
+    }
+
+    /// <summary>How often <see cref="WaitAsync"/> polls; tests set it to zero.</summary>
+    internal static TimeSpan ActionPollInterval { get; set; } = TimeSpan.FromSeconds(1);
 
     private async Task<string?> SendAsync(
         HttpMethod method, string path, object? payload, CancellationToken ct, bool allowNotFound = false,

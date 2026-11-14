@@ -102,4 +102,5 @@ public static class AuditTypes
     public const string SecondFactorsReset = "second-factors-reset";
     public const string ProviderCredentialsChanged = "provider-credentials-changed";
     public const string ProviderGroupRemoved = "provider-group-removed";
+    public const string DomainOrdered = "domain-ordered";
 }

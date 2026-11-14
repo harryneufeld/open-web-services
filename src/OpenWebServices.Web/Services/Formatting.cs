@@ -9,6 +9,10 @@ public static class Formatting
     public static string Money(decimal amount, string currency) =>
         string.Create(German, $"{amount:N2} {(currency == "EUR" ? "€" : currency)}");
 
+    /// <summary>99.9 → "99.9 %", 99.95 → "99.95 %".</summary>
+    public static string Percent(decimal value) =>
+        string.Create(CultureInfo.InvariantCulture, $"{value:0.###} %");
+
     /// <summary>English name of an ISO country code ("DE" → "Germany"), or the code when it is unknown.</summary>
     public static string Country(string code)
     {

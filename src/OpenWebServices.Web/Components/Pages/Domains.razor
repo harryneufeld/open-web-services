@@ -1,0 +1,365 @@
+@page "/domains"
+@rendermode InteractiveServer
+@inject UseCaseRunner Runner
+
+<PageTitle>Domains · ows</PageTitle>
+
+<LiveUpdates Topics="[ResourceTopics.Groups]" OnChange="LoadAsync" />
+
+<header class="page-header">
+    <div>
+        <span class="svc-line"><ServiceBadge Service="OwsService.Domains" /><b>@OwsService.Domains.Name</b><span class="tagline"> · @OwsService.Domains.Tagline</span></span>
+        <h1>Domains</h1>
+    </div>
+</header>
+
+@if (_error is not null)
+{
+    <Notice Kind="error">@_error</Notice>
+}
+
+@if (_groups is null)
+{
+    <section class="panel"><SkeletonRows Count="2" /></section>
+}
+else if (_groups.Count == 0)
+{
+    <section class="panel">
+        <EmptyState IconName="globe" Title="No registrar connected">
+            <ChildContent>Turn on domain registrations for a provider group whose provider sells domains, such as OVHcloud.</ChildContent>
+            <Actions><a class="btn btn-primary" href="/groups">Open provider groups</a></Actions>
+        </EmptyState>
+    </section>
+}
+else
+{
+    <section class="panel" aria-labelledby="search">
+        <div class="panel-header">
+            <div>
+                <h2 id="search">Find a domain</h2>
+                <p>Checks availability and price at every connected registrar. Without an extension, common ones are tried.</p>
+            </div>
+        </div>
+        <form class="toolbar" @onsubmit="SearchAsync" @onsubmit:preventDefault>
+            <label class="field" style="flex:1; min-width:240px"><span>Name</span>
+                <input @bind="_query" @bind:event="oninput" placeholder="example or example.com" spellcheck="false" autocomplete="off" />
+            </label>
+            <button class="btn btn-primary" type="submit" disabled="@(_searching || string.IsNullOrWhiteSpace(_query))">
+                @if (_searching)
+                {
+                    <span class="spinner"></span><text>Searching…</text>
+                }
+                else
+                {
+                    <text>Search</text>
+                }
+            </button>
+        </form>
+        @foreach (var searchError in _searchErrors)
+        {
+            <div class="panel-body"><Notice Kind="warn">@searchError</Notice></div>
+        }
+        @if (_results is { Count: 0 })
+        {
+            <div class="panel-body"><p class="hint">No registrar returned a result.</p></div>
+        }
+        else if (_results is not null)
+        {
+            <div class="table-wrap">
+                <table class="stack">
+                    <thead><tr><th>Domain</th><th>Group</th><th>Status</th><th class="num">First year, net</th><th class="num">Renewal, net</th><th><span class="sr-only">Actions</span></th></tr></thead>
+                    <tbody>
+                        @foreach (var r in _results)
+                        {
+                            <tr class="@(r.Available ? null : "unavailable")">
+                                <td class="mono"><strong>@r.Domain</strong>@if (r.IsPremium)
+                                    {
+                                        <span class="tag billing">Premium</span>
+                                    }</td>
+                                <td data-label="Group">@r.GroupName</td>
+                                <td data-label="Status">
+                                    @if (r.Available)
+                                    {
+                                        <StatusBadge Text="ok" Display="Available" />
+                                    }
+                                    else
+                                    {
+                                        <span class="subtle">@(r.Note ?? "Not available")</span>
+                                    }
+                                </td>
+                                <td data-label="First year" class="num">@(r.Price is { } p ? Formatting.Money(p, r.Currency) : "–")</td>
+                                <td data-label="Renewal" class="num muted">@(r.RenewalPrice is { } rp ? Formatting.Money(rp, r.Currency) : "–")</td>
+                                <td class="actions">
+                                    @if (r.Available && _canOrder)
+                                    {
+                                        <button class="btn btn-sm" disabled="@_busy" @onclick="() => StartOrder(r)">Order…</button>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            @if (!_canOrder && _results.Any(r => r.Available))
+            {
+                <div class="panel-body"><p class="hint">Ordering domains needs the Admin role in this tenant.</p></div>
+            }
+        }
+    </section>
+
+    @if (_ordering is { } candidate)
+    {
+        <section class="panel" aria-labelledby="order">
+            <div class="panel-header">
+                <div>
+                    <h2 id="order">Order @candidate.Domain</h2>
+                    <p>Registered for one year at @candidate.GroupName, with the account behind the group as holder and contact. The registrar charges that account.</p>
+                </div>
+                <button class="btn btn-ghost btn-sm" @onclick="CloseOrder"><Icon Name="x" /><span class="sr-only">Close</span></button>
+            </div>
+            @if (_placed is { } placed)
+            {
+                <div class="panel-body stack">
+                    <Notice Kind="success">
+                        Order @placed.OrderId placed: @Formatting.Money(placed.TotalGross, placed.Currency) including tax.
+                        @(placed.PaidAutomatically ? "It was paid with the account's default payment method." : "It is not paid yet.")
+                    </Notice>
+                    @if (placed.PaymentUrl is { } url)
+                    {
+                        <p><a class="btn btn-primary" href="@url" target="_blank" rel="noopener noreferrer">Pay the order at the registrar</a></p>
+                    }
+                    <p class="hint">Once the registration is complete, the domain's DNS zone appears under DNS after the next sync.</p>
+                </div>
+            }
+            else if (_quote is not { } quote)
+            {
+                <div class="panel-body stack">
+                    <label class="check"><input type="checkbox" @bind="_legalAge" />The domain holder is of legal age.</label>
+                    <p class="hint">The next step prepares the order at the registrar and shows the exact total and terms. Nothing is ordered yet.</p>
+                </div>
+                <div class="panel-footer">
+                    <button class="btn" @onclick="CloseOrder">Cancel</button>
+                    <button class="btn btn-primary" disabled="@(_busy || !_legalAge)" @onclick="QuoteAsync">
+                        @if (_busy)
+                        {
+                            <span class="spinner"></span>
+                        }
+                        Review order
+                    </button>
+                </div>
+            }
+            else
+            {
+                <div class="panel-body stack">
+                    <div class="table-wrap">
+                        <table>
+                            <thead><tr><th>Item</th><th class="num">Net</th></tr></thead>
+                            <tbody>
+                                @foreach (var line in quote.Lines)
+                                {
+                                    <tr><td>@line.Description</td><td class="num">@Formatting.Money(line.Net, quote.Currency)</td></tr>
+                                }
+                                <tr><td>Total, net</td><td class="num">@Formatting.Money(quote.TotalNet, quote.Currency)</td></tr>
+                                <tr><td><strong>Total, including tax</strong></td><td class="num"><strong>@Formatting.Money(quote.TotalGross, quote.Currency)</strong></td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <label class="check"><input type="checkbox" @bind="_payNow" />Pay now with the account's default payment method</label>
+                    <label class="check"><input type="checkbox" @bind="_waiveWithdrawal" />Start the registration right away and waive the withdrawal period</label>
+                    <p class="hint">Without automatic payment the order waits for payment at the registrar. Without waiving the withdrawal period, the registrar may only start after it ends.</p>
+                    @if (quote.Contracts.Count > 0)
+                    {
+                        <p class="hint">By placing the order you accept the registrar's terms:
+                            @for (var i = 0; i < quote.Contracts.Count; i++)
+                            {
+                                var contract = quote.Contracts[i];
+                                <a href="@contract.Url" target="_blank" rel="noopener noreferrer">@contract.Name</a>@(i < quote.Contracts.Count - 1 ? ", " : ".")
+                            }
+                        </p>
+                    }
+                </div>
+                <div class="panel-footer">
+                    <button class="btn" @onclick="CloseOrder">Cancel</button>
+                    <button class="btn btn-primary" disabled="@_busy" @onclick="PlaceAsync">
+                        @if (_busy)
+                        {
+                            <span class="spinner"></span>
+                        }
+                        Place order for @Formatting.Money(quote.TotalGross, quote.Currency)
+                    </button>
+                </div>
+            }
+        </section>
+    }
+
+    <section class="panel" aria-labelledby="registered">
+        <div class="panel-header">
+            <h2 id="registered">Your domains</h2>
+            <button class="btn btn-ghost btn-sm" disabled="@_loadingRegistered" @onclick="LoadRegisteredAsync">
+                @if (_loadingRegistered)
+                {
+                    <span class="spinner"></span>
+                }
+                else
+                {
+                    <Icon Name="refresh" />
+                }
+                Reload
+            </button>
+        </div>
+        @if (_registered is null)
+        {
+            <SkeletonRows Count="3" />
+        }
+        else
+        {
+            @foreach (var group in _registered.Where(g => g.Error is not null))
+            {
+                <div class="panel-body"><Notice Kind="warn">@group.GroupName: @group.Error</Notice></div>
+            }
+            var all = _registered.SelectMany(g => g.Domains.Select(d => (Group: g, Domain: d))).ToList();
+            @if (all.Count == 0)
+            {
+                <EmptyState IconName="globe" Title="No domains yet">
+                    <ChildContent>Domains registered with your registrar groups appear here.</ChildContent>
+                </EmptyState>
+            }
+            else
+            {
+                <ul class="list">
+                    @foreach (var (group, domain) in Paging.Slice(all, _page))
+                    {
+                        <li>
+                            <span class="grow"><strong class="mono">@domain.Name</strong></span>
+                            <a class="subtle" href="/groups/@group.GroupId">@group.GroupName</a>
+                        </li>
+                    }
+                </ul>
+                <Pager Total="all.Count" @bind-Page="_page" Label="Domain pages" />
+            }
+        }
+    </section>
+}
+
+@code {
+    private IReadOnlyList<ProviderGroup>? _groups;
+    private IReadOnlyList<GroupDomains>? _registered;
+    private IReadOnlyList<DomainAvailability>? _results;
+    private IReadOnlyList<string> _searchErrors = [];
+    private DomainAvailability? _ordering;
+    private DomainQuote? _quote;
+    private PlacedDomainOrder? _placed;
+    private string? _error;
+    private string _query = "";
+    private int _page = 1;
+    private bool _canOrder;
+    private bool _searching;
+    private bool _busy;
+    private bool _loadingRegistered;
+    private bool _legalAge;
+    private bool _payNow;
+    private bool _waiveWithdrawal;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            var session = await Runner.RunAsync<SessionQueries, SessionView?>(q => q.GetAsync(CancellationToken.None));
+            _canOrder = session?.CurrentTenant?.Role >= TenantRole.Admin;
+            _groups = await Runner.RunAsync<DomainQueries, IReadOnlyList<ProviderGroup>>(q => q.ListRegistrarGroupsAsync(CancellationToken.None));
+        }
+        catch (Exception ex) when (UserFacingErrors.Matches(ex))
+        {
+            _error = ex.Message;
+            _groups = [];
+        }
+
+        if (_groups.Count > 0)
+            await LoadRegisteredAsync();
+    }
+
+    private async Task LoadRegisteredAsync()
+    {
+        _loadingRegistered = true;
+        try
+        {
+            _registered = await Runner.RunAsync<DomainQueries, IReadOnlyList<GroupDomains>>(q => q.ListRegisteredAsync(CancellationToken.None));
+        }
+        catch (Exception ex) when (UserFacingErrors.Matches(ex))
+        {
+            _error = ex.Message;
+            _registered = [];
+        }
+        finally
+        {
+            _loadingRegistered = false;
+        }
+    }
+
+    private async Task SearchAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_query) || _searching)
+            return;
+        _searching = true;
+        _error = null;
+        try
+        {
+            var result = await Runner.RunAsync<DomainSearch, DomainSearchResult>(u => u.ExecuteAsync(_query, CancellationToken.None));
+            (_results, _searchErrors) = (result.Results, result.Errors);
+        }
+        catch (Exception ex) when (UserFacingErrors.Matches(ex))
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _searching = false;
+        }
+    }
+
+    private void StartOrder(DomainAvailability candidate)
+    {
+        _ordering = candidate;
+        (_quote, _placed) = (null, null);
+        (_legalAge, _payNow, _waiveWithdrawal) = (false, false, false);
+        _error = null;
+    }
+
+    private void CloseOrder() => (_ordering, _quote, _placed) = (null, null, null);
+
+    private Task QuoteAsync() => RunAsync(async () =>
+    {
+        var candidate = _ordering!;
+        _quote = await Runner.RunAsync<QuoteDomainOrder, DomainQuote>(u =>
+            u.ExecuteAsync(candidate.GroupId, candidate.Domain, _legalAge, CancellationToken.None));
+    });
+
+    private Task PlaceAsync() => RunAsync(async () =>
+    {
+        var (candidate, quote) = (_ordering!, _quote!);
+        var options = new DomainOrderOptions(_payNow, _waiveWithdrawal);
+        _placed = await Runner.RunAsync<PlaceDomainOrder, PlacedDomainOrder>(u =>
+            u.ExecuteAsync(candidate.GroupId, quote, options, CancellationToken.None));
+        await LoadRegisteredAsync();
+    });
+
+    private async Task RunAsync(Func<Task> action)
+    {
+        _busy = true;
+        _error = null;
+        try
+        {
+            await action();
+        }
+        catch (Exception ex) when (UserFacingErrors.Matches(ex) || ex is ForbiddenException)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

@@ -1,0 +1,222 @@
+@* The inbound firewall ows manages for one server, plus read-only firewalls set up elsewhere. *@
+@inject UseCaseRunner Runner
+
+<section class="panel" aria-labelledby="firewall">
+    <div class="panel-header">
+        <div>
+            <h2 id="firewall">Firewall</h2>
+            <p>Inbound rules at the provider. Traffic no rule allows is dropped; outbound traffic is not restricted.</p>
+        </div>
+        @if (_view?.Firewall is { ManagedRules: not null } && !_editing)
+        {
+            <button class="btn btn-sm" @onclick="StartEditing"><Icon Name="edit" />Edit rules</button>
+        }
+    </div>
+    @if (_error is not null)
+    {
+        <div class="panel-body"><Notice Kind="error">@_error</Notice></div>
+    }
+    @if (_view is null)
+    {
+        <SkeletonRows Count="2" />
+    }
+    else if (_view.Firewall is not { } firewall)
+    {
+        <div class="panel-body"><Notice>@_view.Unavailable</Notice></div>
+    }
+    else
+    {
+        <div class="panel-body stack">
+            @if (!firewall.IsFiltered)
+            {
+                <Notice Kind="warn">No firewall applies: every port that a program on the server listens on is reachable from the internet.</Notice>
+            }
+
+            @if (_editing)
+            {
+                <div class="table-wrap">
+                    <table class="stack rule-editor">
+                        <thead><tr><th>Protocol</th><th>Port</th><th>Sources</th><th>Description</th><th><span class="sr-only">Actions</span></th></tr></thead>
+                        <tbody>
+                            @foreach (var row in _rows)
+                            {
+                                <tr>
+                                    <td data-label="Protocol">
+                                        <select @bind="row.Protocol" aria-label="Protocol">
+                                            @foreach (var protocol in Enum.GetValues<FirewallProtocol>())
+                                            {
+                                                <option value="@protocol">@protocol.ToString().ToUpperInvariant()</option>
+                                            }
+                                        </select>
+                                    </td>
+                                    <td data-label="Port"><input class="mono" @bind="row.Port" placeholder="@(row.Protocol == FirewallProtocol.Icmp ? "–" : "443")" disabled="@(row.Protocol == FirewallProtocol.Icmp)" aria-label="Port or range" /></td>
+                                    <td data-label="Sources"><input class="mono" @bind="row.Sources" placeholder="0.0.0.0/0, ::/0" spellcheck="false" aria-label="Source ranges" /></td>
+                                    <td data-label="Description"><input @bind="row.Description" maxlength="@ServerFirewalls.MaxDescriptionLength" aria-label="Description" /></td>
+                                    <td class="actions"><button class="btn btn-sm btn-ghost" @onclick="() => _rows.Remove(row)" title="Remove rule"><Icon Name="trash" /><span class="sr-only">Remove rule</span></button></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <div class="actions">
+                    <button class="btn btn-sm" @onclick="() => _rows.Add(new RuleRow())"><Icon Name="plus" />Add rule</button>
+                    @foreach (var preset in ServerFirewalls.Presets)
+                    {
+                        <button class="btn btn-sm btn-ghost" @onclick="() => _rows.Add(RuleRow.From(preset.Rule))"><Icon Name="plus" />@preset.Name</button>
+                    }
+                </div>
+                <p class="hint">Sources are IP addresses or ranges, separated by commas. 0.0.0.0/0 and ::/0 allow everyone. Ports are single ports or ranges such as 8000-8100.</p>
+                @if (!AllowsSsh)
+                {
+                    <Notice Kind="warn">No rule allows SSH (TCP 22). You lose remote shell access, and ows cannot install apps on this server.</Notice>
+                }
+            }
+            else if (firewall.ManagedRules is { } rules)
+            {
+                <RuleTable Rules="rules" />
+            }
+
+            @foreach (var other in firewall.OtherFirewalls)
+            {
+                <div class="subsection">
+                    <h3>@other.Name <span class="tag">Managed outside ows</span></h3>
+                    @if (other.InboundRules.Count == 0)
+                    {
+                        <p class="hint">No inbound rules: this firewall blocks all inbound traffic.</p>
+                    }
+                    else
+                    {
+                        <RuleTable Rules="other.InboundRules" />
+                    }
+                </div>
+            }
+        </div>
+        @if (_editing)
+        {
+            <div class="panel-footer">
+                @if (firewall.ManagedRules is not null)
+                {
+                    @if (_confirmRemove)
+                    {
+                        <button class="btn" @onclick="() => _confirmRemove = false">Keep firewall</button>
+                        <button class="btn btn-danger-solid" disabled="@_busy" @onclick="RemoveAsync" style="margin-right:auto">Remove firewall</button>
+                    }
+                    else
+                    {
+                        <button class="btn btn-danger" disabled="@_busy" @onclick="() => _confirmRemove = true" style="margin-right:auto">Remove firewall…</button>
+                    }
+                    <button class="btn" @onclick="() => _editing = false">Cancel</button>
+                }
+                <button class="btn btn-primary" disabled="@(_busy || _rows.Count == 0)" @onclick="SaveAsync">
+                    @if (_busy)
+                    {
+                        <span class="spinner"></span>
+                    }
+                    @(firewall.ManagedRules is null ? "Turn on firewall" : "Save rules")
+                </button>
+            </div>
+        }
+    }
+</section>
+
+@code {
+    private ServerFirewallView? _view;
+    private List<RuleRow> _rows = [];
+    private string? _error;
+    private bool _editing;
+    private bool _busy;
+    private bool _confirmRemove;
+
+    [Parameter, EditorRequired] public Guid ServerId { get; set; }
+
+    private bool AllowsSsh => _rows.Any(r => r.Protocol == FirewallProtocol.Tcp && CoversPort(r.Port, 22));
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            _view = await Runner.RunAsync<ServerFirewalls, ServerFirewallView>(u => u.GetAsync(ServerId, CancellationToken.None));
+            // Without an ows firewall the editor is open right away, pre-filled with the usual web server rules.
+            if (_view.Firewall is { ManagedRules: null })
+            {
+                _editing = true;
+                _rows = [.. ServerFirewalls.Presets.Take(3).Select(p => RuleRow.From(p.Rule))];
+            }
+        }
+        catch (Exception ex) when (UserFacingErrors.Matches(ex))
+        {
+            _error = ex.Message;
+            _view ??= new ServerFirewallView(null, "The firewall could not be loaded.");
+        }
+    }
+
+    private void StartEditing()
+    {
+        _rows = [.. (_view?.Firewall?.ManagedRules ?? []).Select(RuleRow.From)];
+        _editing = true;
+        _confirmRemove = false;
+    }
+
+    private Task SaveAsync() => RunAsync(async () =>
+    {
+        var rules = _rows.Select(r => r.ToRule()).ToList();
+        await Runner.RunAsync<ServerFirewalls>(u => u.SaveAsync(ServerId, rules, CancellationToken.None));
+        _editing = false;
+    });
+
+    private Task RemoveAsync() => RunAsync(async () =>
+    {
+        await Runner.RunAsync<ServerFirewalls>(u => u.RemoveAsync(ServerId, CancellationToken.None));
+        _editing = false;
+        _confirmRemove = false;
+    });
+
+    private async Task RunAsync(Func<Task> action)
+    {
+        _busy = true;
+        _error = null;
+        try
+        {
+            await action();
+            await LoadAsync();
+        }
+        catch (Exception ex) when (UserFacingErrors.Matches(ex))
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private static bool CoversPort(string? port, int number)
+    {
+        var parts = (port ?? "").Split('-');
+        return int.TryParse(parts[0], out var from) && int.TryParse(parts[^1], out var to) && from <= number && number <= to;
+    }
+
+    private sealed class RuleRow
+    {
+        public FirewallProtocol Protocol { get; set; } = FirewallProtocol.Tcp;
+        public string Port { get; set; } = "";
+        public string Sources { get; set; } = "0.0.0.0/0, ::/0";
+        public string Description { get; set; } = "";
+
+        public static RuleRow From(FirewallRule rule) => new()
+        {
+            Protocol = rule.Protocol,
+            Port = rule.Port ?? "",
+            Sources = string.Join(", ", rule.Sources),
+            Description = rule.Description ?? "",
+        };
+
+        public FirewallRule ToRule() => new(
+            Protocol,
+            Protocol == FirewallProtocol.Icmp ? null : Port,
+            Sources.Split([',', ' ', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
+            Description);
+    }
+}

@@ -38,6 +38,12 @@
         <p>@OwsService.Dns.Tagline</p>
         <span class="meta">@(_zones is null ? "…" : $"{_zones.Count} {Plural(_zones.Count, "zone", "zones")} · {_zones.Sum(z => z.Zone.RecordCount ?? 0)} records")</span>
     </a>
+    <a class="service" href="/domains">
+        <ServiceBadge Service="OwsService.Domains" Large="true" />
+        <span class="name">Lot 42 <small>Domains</small></span>
+        <p>@OwsService.Domains.Tagline</p>
+        <span class="meta">Search and order at connected registrars</span>
+    </a>
     <a class="service" href="/groups">
         <ServiceBadge Service="OwsService.Groups" Large="true" />
         <span class="name">IOU <small>Provider groups</small></span>
