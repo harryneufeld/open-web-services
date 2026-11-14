@@ -594,7 +594,8 @@ a.service:hover { text-decoration: none; border-color: var(--border-strong); box
     .account-link { flex: none; }
     .totp-setup { grid-template-columns: 1fr; }
 }
-.actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+/* Button groups outside tables; table cells keep td.actions (right-aligned, still a table cell). */
+.actions:not(td) { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 td .actions { justify-content: flex-end; }
 
 /* Sub-sections inside a panel body, e.g. reverse DNS and private networks of a server. */
