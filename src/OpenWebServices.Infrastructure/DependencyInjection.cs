@@ -15,6 +15,7 @@ using OpenWebServices.Infrastructure.Providers;
 using OpenWebServices.Infrastructure.Security;
 using OpenWebServices.Infrastructure.Ssh;
 using OpenWebServices.Infrastructure.Templates;
+using OpenWebServices.Infrastructure.Ovh;
 
 namespace OpenWebServices.Infrastructure;
 
@@ -48,6 +49,8 @@ public static class DependencyInjection
             client.Timeout = TimeSpan.FromSeconds(30);
         });
         services.AddSingleton<IProviderConnector, HetznerConnector>();
+        services.AddHttpClient(OvhConnector.HttpClientName, client => client.Timeout = TimeSpan.FromSeconds(30));
+        services.AddSingleton<IProviderConnector, OvhConnector>();
 
         services.AddSingleton<ProviderCatalog>();
         services.AddSingleton<IProviderCatalog>(sp => sp.GetRequiredService<ProviderCatalog>());
