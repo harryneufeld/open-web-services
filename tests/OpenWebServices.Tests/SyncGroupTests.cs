@@ -103,6 +103,21 @@ public class SyncGroupTests
     }
 
     [Fact]
+    public async Task Servers_missing_only_from_a_lagging_list_are_not_marked_failed()
+    {
+        var created = Server.Provision(_group.TenantId, _group.Id, "mine", "fsn1", "cx23", "ubuntu-24.04", 4m, "EUR", "key", _clock.UtcNow);
+        created.AttachProviderResources("2", "7", null);
+        _servers.Add(created);
+        _connection.ServerProvider.Servers.Add(TestData.Remote("2", "mine", ObservedServerState.Starting));
+        _connection.ServerProvider.HiddenFromList.Add("2");
+
+        await SyncAsync();
+
+        Assert.NotEqual(ServerStatus.Failed, created.Status);
+        Assert.Null(created.FailureReason);
+    }
+
+    [Fact]
     public async Task Vanished_zones_are_removed()
     {
         _zones.Add(DnsZone.Track(_group.TenantId, _group.Id, "5", "old.example", _clock.UtcNow));

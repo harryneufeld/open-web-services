@@ -9,7 +9,8 @@ public sealed record ProvisionServerCommand(
     string Name,
     string Location,
     string TypeName,
-    string Image);
+    string Image,
+    string? BillingId = null);
 
 /// <summary>Creates a server at a provider and starts tracking it.</summary>
 public sealed class ProvisionServer(
@@ -27,6 +28,8 @@ public sealed class ProvisionServer(
     {
         access.Require(TenantRole.Member);
         var group = await groups.FindAsync(command.GroupId, ct) ?? throw new NotFoundException("Provider group");
+        if (command.BillingId is not null && !group.ShowCommitmentOffers)
+            throw new OfferUnavailableException($"{command.Location}/{command.TypeName}/{command.BillingId}");
         var provider = (await connections.ConnectAsync(group.Id, ct)).RequireServers();
         var offer = await FindAvailableOfferAsync(provider, command, ct);
 
@@ -50,7 +53,8 @@ public sealed class ProvisionServer(
     {
         var offers = await provider.GetOffersAsync(ct);
         return offers.FirstOrDefault(o =>
-                   o.Location == command.Location && o.TypeName == command.TypeName && o.Available)
+                   o.Location == command.Location && o.TypeName == command.TypeName && o.Billing?.Id == command.BillingId
+                   && o.Available)
                ?? throw new OfferUnavailableException($"{command.Location}/{command.TypeName}");
     }
 
@@ -63,7 +67,7 @@ public sealed class ProvisionServer(
             sshKeyId = await provider.RegisterSshKeyAsync($"ows-{server.Id:N}", keyPair.PublicKeyOpenSsh, ct);
             var created = await provider.CreateServerAsync(
                 new CreateServerRequest(command.Name, command.TypeName, command.Location, command.Image,
-                    sshKeyId, ServerBootstrapScript.Content), ct);
+                    sshKeyId, ServerBootstrapScript.Content, command.BillingId), ct);
             server.AttachProviderResources(created.ExternalId, sshKeyId, created.Ipv4);
         }
         catch (Exception ex) when (ex is ProviderException or HttpRequestException)

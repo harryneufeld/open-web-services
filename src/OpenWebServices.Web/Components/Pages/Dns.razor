@@ -100,7 +100,7 @@
                     <tr><th>Domain</th><th>Delegation</th><th>Group</th><th class="num">Records</th><th>Nameservers</th></tr>
                 </thead>
                 <tbody>
-                    @foreach (var view in _zones)
+                    @foreach (var view in Paging.Slice(_zones, _page))
                     {
                         var z = view.Zone;
                         <tr>
@@ -114,11 +114,13 @@
                 </tbody>
             </table>
         </div>
+        <Pager Total="_zones.Count" @bind-Page="_page" Label="Zone pages" />
     }
 </section>
 
 @code {
     private IReadOnlyList<ZoneView>? _zones;
+    private int _page = 1;
     private IReadOnlyList<ProviderGroup>? _groups;
     private Guid _groupId;
     private string _domain = "";

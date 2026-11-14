@@ -43,7 +43,8 @@ internal sealed class OvhConnector(IHttpClientFactory httpClients, ILogger<OvhAp
                 Help: "The Public Cloud project that contains the instances to manage."),
             new CredentialField(SubsidiaryKey, "OVHcloud subsidiary", IsSecret: false,
                 Help: "Two-letter country code used for pricing, such as FR, DE, CA, or US."),
-        ]);
+        ],
+        HasCommitmentOffers: true);
 
     public IProviderConnection Connect(IReadOnlyDictionary<string, string> credentials)
     {

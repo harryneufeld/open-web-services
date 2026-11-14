@@ -15,6 +15,12 @@ internal sealed class OvhServerProvider(OvhApiClient api, string projectId, stri
     private const int MaxConcurrentRequests = 6;
     // Object-storage-only regions (e.g. "BHS") are listed for the project too; their flavor list answers 404.
     private static readonly HttpStatusCode[] NoComputeInRegion = [HttpStatusCode.NotFound];
+    private static readonly OfferBilling Monthly = new(
+        "monthly",
+        "Monthly",
+        "OVHcloud monthly billing: a lower flat rate per calendar month instead of hourly billing. A started month " +
+        "is charged in full, and the server cannot be switched back to hourly billing.");
+
     private static readonly TimeSpan PriceCacheLifetime = TimeSpan.FromMinutes(30);
     private static readonly ConcurrentDictionary<string, CachedPriceList> PriceCache = new(StringComparer.OrdinalIgnoreCase);
 
@@ -22,7 +28,7 @@ internal sealed class OvhServerProvider(OvhApiClient api, string projectId, stri
 
     public async Task<IReadOnlyList<ServerOffer>> GetOffersAsync(CancellationToken ct)
     {
-        var prices = await GetHourlyPricesAsync(ct);
+        var prices = await GetPricesAsync(ct);
         // Only the region list and flavor endpoints are used, so a consumer key limited to the calls this
         // provider makes keeps working (region details, for example, are often not granted).
         var regionNames = await api.GetAllAsync<string>($"{ProjectPath}/region", ct);
@@ -36,7 +42,7 @@ internal sealed class OvhServerProvider(OvhApiClient api, string projectId, stri
 
     public async Task<IReadOnlyList<ProviderServer>> ListServersAsync(CancellationToken ct)
     {
-        var prices = await GetHourlyPricesAsync(ct);
+        var prices = await GetPricesAsync(ct);
         var instances = await api.GetAllAsync<OvhInstance>($"{ProjectPath}/instance", ct);
         return [.. instances.Select(instance => ToProviderServer(instance, prices))];
     }
@@ -44,7 +50,7 @@ internal sealed class OvhServerProvider(OvhApiClient api, string projectId, stri
     public async Task<ProviderServer?> GetServerAsync(string externalId, CancellationToken ct)
     {
         var instance = await api.GetAsync<OvhInstance>(InstancePath(externalId), ct, allowNotFound: true);
-        return instance is null ? null : ToProviderServer(instance, await GetHourlyPricesAsync(ct));
+        return instance is null ? null : ToProviderServer(instance, await GetPricesAsync(ct));
     }
 
     public async Task<string> RegisterSshKeyAsync(string name, string publicKey, CancellationToken ct)
@@ -55,13 +61,16 @@ internal sealed class OvhServerProvider(OvhApiClient api, string projectId, stri
 
     public async Task<CreatedServer> CreateServerAsync(CreateServerRequest request, CancellationToken ct)
     {
+        if (request.BillingId is not null && request.BillingId != Monthly.Id)
+            throw new ProviderException($"OVHcloud does not offer the billing option '{request.BillingId}'.");
         var flavor = (await GetFlavorsAsync(request.Location, ct)).FirstOrDefault(candidate =>
                          string.Equals(candidate.Name, request.TypeName, StringComparison.OrdinalIgnoreCase))
                      ?? throw new ProviderException($"OVHcloud server flavor {request.TypeName} is unavailable in region {request.Location}.");
         var image = await FindImageAsync(request.Location, request.Image, ct);
         var created = await api.PostAsync<OvhInstance>(
             $"{ProjectPath}/instance",
-            new OvhCreateInstance(request.Name, flavor.Id, image.Id, request.Location, request.SshKeyId, request.UserData),
+            new OvhCreateInstance(request.Name, flavor.Id, image.Id, request.Location, request.SshKeyId, request.UserData,
+                MonthlyBilling: request.BillingId == Monthly.Id),
             ct);
         return new CreatedServer(created.Id, PublicIpv4(created));
     }
@@ -91,16 +100,16 @@ internal sealed class OvhServerProvider(OvhApiClient api, string projectId, stri
             $"{ProjectPath}/flavor?region={Escape(regionName)}", ct, NoComputeInRegion);
         return [.. (flavors ?? [])
             .Where(flavor => flavor.Available is not false)
-            .Select(flavor => ToOffer(regionName, flavor, prices))];
+            .SelectMany(flavor => ToOffers(regionName, flavor, prices))];
     }
 
     private Task<List<OvhFlavor>> GetFlavorsAsync(string region, CancellationToken ct) =>
         api.GetAllAsync<OvhFlavor>($"{ProjectPath}/flavor?region={Escape(region)}", ct);
 
-    private async Task<OvhPriceList> GetHourlyPricesAsync(CancellationToken ct)
+    private async Task<OvhPriceList> GetPricesAsync(CancellationToken ct)
     {
         // The public catalog changes rarely and is the same for every project, so it is shared per API endpoint and
-        // subsidiary for a short time. Hourly plans are billed per started hour.
+        // subsidiary for a short time.
         var cacheKey = $"{endpoint}:{subsidiary}";
         if (PriceCache.TryGetValue(cacheKey, out var cached) && cached.ExpiresAt > DateTimeOffset.UtcNow)
             return cached.Prices;
@@ -123,9 +132,18 @@ internal sealed class OvhServerProvider(OvhApiClient api, string projectId, stri
                ?? throw new ProviderException($"OVHcloud has no {requested} image available in region {region}.");
     }
 
-    private static ServerOffer ToOffer(string region, OvhFlavor flavor, OvhPriceList prices)
+    /// <summary>The pay-as-you-go offer, plus a monthly-billing offer when the catalog prices one.</summary>
+    private static IEnumerable<ServerOffer> ToOffers(string region, OvhFlavor flavor, OvhPriceList prices)
     {
-        var hourly = prices.Find(flavor.PlanCodes?.Hourly, flavor.Name);
+        var hourly = prices.Find(flavor.PlanCodes?.Hourly ?? $"{flavor.Name}.consumption") ?? OvhPriceList.Unknown;
+        var offer = ToOffer(region, flavor, hourly, prices.Currency);
+        yield return offer;
+        if (prices.Find(flavor.PlanCodes?.Monthly ?? $"{flavor.Name}.monthly.postpaid") is { } monthly)
+            yield return ToOffer(region, flavor, monthly, prices.Currency) with { Billing = Monthly };
+    }
+
+    private static ServerOffer ToOffer(string region, OvhFlavor flavor, Money monthlyPrice, string currency)
+    {
         var (city, country) = OvhRegions.Describe(region);
         return new ServerOffer(
             OvhConnector.ProviderType,
@@ -138,16 +156,19 @@ internal sealed class OvhServerProvider(OvhApiClient api, string projectId, stri
             NormalizeArchitecture(flavor.Architecture),
             flavor.Ram,
             flavor.Disk,
-            hourly.Net * HoursPerMonth,
-            hourly.Gross * HoursPerMonth,
-            prices.Currency,
+            monthlyPrice.Net,
+            monthlyPrice.Gross,
+            currency,
             Available: true);
     }
 
     private static ProviderServer ToProviderServer(OvhInstance instance, OvhPriceList prices)
     {
         var flavor = instance.Flavor;
-        var price = prices.Find(instance.PlanCode ?? flavor?.PlanCodes?.Hourly, flavor?.Name);
+        // Monthly-billed instances report their monthly plan code, so the price follows the instance's billing.
+        var price = prices.Find(instance.PlanCode)
+                    ?? prices.Find(flavor?.PlanCodes?.Hourly ?? $"{flavor?.Name}.consumption")
+                    ?? OvhPriceList.Unknown;
         return new ProviderServer(
             instance.Id,
             instance.Name,
@@ -156,7 +177,7 @@ internal sealed class OvhServerProvider(OvhApiClient api, string projectId, stri
             instance.Region ?? "unknown",
             flavor?.Name ?? "unknown",
             instance.Image?.Name ?? instance.ImageId ?? "unknown",
-            price.Net * HoursPerMonth,
+            price.Net,
             prices.Currency);
     }
 
@@ -189,33 +210,31 @@ internal sealed class OvhServerProvider(OvhApiClient api, string projectId, stri
 
     private sealed record Money(decimal Net, decimal Gross);
 
-    private sealed class OvhPriceList(string currency, Dictionary<string, Money> hourly)
+    /// <summary>Catalog prices per plan code, as a monthly amount: hourly plans × 730 h, monthly plans as listed.</summary>
+    private sealed class OvhPriceList(string currency, Dictionary<string, Money> perMonth)
     {
-        private static readonly Money Unknown = new(0m, 0m);
+        public static readonly Money Unknown = new(0m, 0m);
 
         public string Currency => currency;
 
-        /// <summary>Looks up the plan code, falling back to the flavor's default consumption plan.</summary>
-        public Money Find(string? planCode, string? flavorName)
-        {
-            if (!string.IsNullOrWhiteSpace(planCode) && hourly.TryGetValue(planCode, out var byPlan))
-                return byPlan;
-            if (flavorName is not null && hourly.TryGetValue($"{flavorName}.consumption", out var byFlavor))
-                return byFlavor;
-            return Unknown;
-        }
+        public Money? Find(string? planCode) =>
+            !string.IsNullOrWhiteSpace(planCode) && perMonth.TryGetValue(planCode, out var money) ? money : null;
 
         public static OvhPriceList FromCatalog(OvhCatalog catalog)
         {
             var prices = new Dictionary<string, Money>(StringComparer.OrdinalIgnoreCase);
             foreach (var addon in catalog.Addons)
             {
-                var price = addon.Pricings.FirstOrDefault(pricing => pricing.IntervalUnit == "hour");
-                if (price is not null)
-                    prices[addon.PlanCode] = new Money(price.Price / CatalogPriceScale, (price.Price + price.Tax) / CatalogPriceScale);
+                if (addon.Pricings.FirstOrDefault(pricing => pricing.IntervalUnit == "hour") is { } hourly)
+                    prices[addon.PlanCode] = ToMoney(hourly, HoursPerMonth);
+                else if (addon.Pricings.FirstOrDefault(pricing => pricing.IntervalUnit == "month") is { } monthly)
+                    prices[addon.PlanCode] = ToMoney(monthly, 1m);
             }
 
             return new OvhPriceList(catalog.Locale.CurrencyCode, prices);
         }
+
+        private static Money ToMoney(OvhCatalogPricing pricing, decimal factor) =>
+            new(pricing.Price / CatalogPriceScale * factor, (pricing.Price + pricing.Tax) / CatalogPriceScale * factor);
     }
 }

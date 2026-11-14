@@ -1,0 +1,7 @@
+@* A billing option other than pay-as-you-go, e.g. "Monthly", numbered like the note that explains it. *@
+<span class="tag billing" title="@Billing.Note">@Billing.Label<span class="tag-ref"><span class="sr-only">, see note </span>@Number</span></span>
+
+@code {
+    [Parameter, EditorRequired] public OfferBilling Billing { get; set; } = default!;
+    [Parameter] public int Number { get; set; }
+}

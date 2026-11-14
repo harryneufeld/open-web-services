@@ -15,7 +15,8 @@ public class OvhProviderTests
 
     private const string Catalog = """
         {"locale":{"currencyCode":"EUR"},"addons":[
-          {"planCode":"b3-8.consumption","pricings":[{"intervalUnit":"hour","price":5120000,"tax":972800}]}]}
+          {"planCode":"b3-8.consumption","pricings":[{"intervalUnit":"hour","price":5120000,"tax":972800}]},
+          {"planCode":"b3-8.monthly.postpaid","pricings":[{"intervalUnit":"month","price":2800000000,"tax":532000000}]}]}
         """;
 
     [Fact]
@@ -33,10 +34,14 @@ public class OvhProviderTests
 
         var offers = await NewProvider(handler).GetOffersAsync(CancellationToken.None);
 
-        var offer = Assert.Single(offers);
-        Assert.Equal("GRA11", offer.Location);
-        Assert.Equal("EUR", offer.Currency);
-        Assert.Equal(0.0512m * 730m, offer.MonthlyNet);
+        Assert.All(offers, offer => Assert.Equal("GRA11", offer.Location));
+        var hourly = Assert.Single(offers, offer => offer.Billing is null);
+        Assert.Equal("EUR", hourly.Currency);
+        Assert.Equal(0.0512m * 730m, hourly.MonthlyNet);
+        var monthly = Assert.Single(offers, offer => offer.Billing is not null);
+        Assert.Equal("monthly", monthly.Billing!.Id);
+        Assert.Equal(28m, monthly.MonthlyNet);
+        Assert.NotEqual(hourly.Key, monthly.Key);
         Assert.DoesNotContain(handler.Requested, path => path.Contains("/region/", StringComparison.Ordinal));
     }
 

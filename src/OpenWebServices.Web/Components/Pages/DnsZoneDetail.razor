@@ -126,7 +126,7 @@ else
                 <table class="stack">
                     <thead><tr><th>Name</th><th>Type</th><th class="num">TTL</th><th>Values</th><th><span class="sr-only">Actions</span></th></tr></thead>
                     <tbody>
-                        @foreach (var set in _records)
+                        @foreach (var set in Paging.Slice(_records, _page))
                         {
                             <tr>
                                 <td class="mono">@set.Name<span class="tag only-sm">@set.Type</span></td>
@@ -157,6 +157,7 @@ else
                     </tbody>
                 </table>
             </div>
+            <Pager Total="_records.Count" @bind-Page="_page" Label="Record pages" />
         }
     </section>
 
@@ -184,6 +185,7 @@ else
 @code {
     private ZoneView? _view;
     private IReadOnlyList<DnsRecordSet>? _records;
+    private int _page = 1;
     private RecordEditor? _editor;
     private DnsRecordSet? _editing;
     private DnsRecordSet? _confirmDelete;

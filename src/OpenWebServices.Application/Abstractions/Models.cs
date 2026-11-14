@@ -28,16 +28,30 @@ public sealed record ServerOffer(
 
     public string GroupName { get; init; } = "";
 
-    public string Key => $"{GroupId:N}/{Location}/{TypeName}";
+    /// <summary>
+    /// Set when this offer is billed differently from the provider's pay-as-you-go default, e.g. a cheaper monthly
+    /// commitment. The same size can then appear once per billing option.
+    /// </summary>
+    public OfferBilling? Billing { get; init; }
+
+    public string Key => $"{GroupId:N}/{Location}/{TypeName}/{Billing?.Id}";
 }
 
+/// <summary>A billing option other than pay-as-you-go.</summary>
+/// <param name="Id">Provider-defined, passed back when the server is created.</param>
+/// <param name="Label">Short tag shown with the offer, e.g. "Monthly".</param>
+/// <param name="Note">What the option means for the customer; shown once below the offers.</param>
+public sealed record OfferBilling(string Id, string Label, string Note);
+
+/// <param name="BillingId">The chosen <see cref="OfferBilling.Id"/>, or null for pay-as-you-go.</param>
 public sealed record CreateServerRequest(
     string Name,
     string TypeName,
     string Location,
     string Image,
     string SshKeyId,
-    string UserData);
+    string UserData,
+    string? BillingId = null);
 
 public sealed record CreatedServer(string ExternalId, string? Ipv4);
 
