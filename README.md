@@ -25,6 +25,8 @@ Adding a provider = implement `IProviderConnector` (returns an `IProviderConnect
 connector's `ProviderTypeInfo`. A new resource kind = a `ResourceKind` flag, a capability interface, and an
 `IResourceSync` implementation.
 
+Provider setup notes: [OVHcloud API access rules](docs/ovh.md) (the consumer key must be granted each route ows calls).
+
 ## Run locally
 
 ```bash
