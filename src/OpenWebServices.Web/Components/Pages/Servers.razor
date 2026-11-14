@@ -44,7 +44,7 @@
                     <tr><th>Name</th><th>Status</th><th>Group</th><th>Location</th><th>Type</th><th>Public IPv4</th><th class="num">Monthly, net</th></tr>
                 </thead>
                 <tbody>
-                    @foreach (var view in _servers)
+                    @foreach (var view in Paging.Slice(_servers, _page))
                     {
                         var s = view.Server;
                         <tr>
@@ -66,11 +66,13 @@
                 </tbody>
             </table>
         </div>
+        <Pager Total="_servers.Count" @bind-Page="_page" Label="Server pages" />
     }
 </section>
 
 @code {
     private IReadOnlyList<ServerView>? _servers;
+    private int _page = 1;
     private string? _error;
 
     protected override Task OnInitializedAsync() => LoadAsync();

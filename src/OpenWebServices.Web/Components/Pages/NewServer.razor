@@ -38,16 +38,19 @@ else if (_offers.Count == 0)
 }
 else
 {
+    var visible = FilteredOffers.ToList();
+    var pageRows = Paging.Slice(visible, _page).ToList();
+    var footnotes = Footnotes(pageRows);
     <section class="panel" aria-labelledby="offers">
         <div class="panel-header">
             <h2 id="offers">1. Choose an offer</h2>
-            <span class="subtle">@FilteredOffers.Count() of @_offers.Count offers</span>
+            <span class="subtle">@visible.Count of @_offers.Count offers</span>
         </div>
         <div class="toolbar">
             @if (Groups.Count > 1)
             {
                 <label class="field"><span>Group</span>
-                    <select @bind="_groupFilter">
+                    <select @bind="_groupFilter" @bind:after="FirstPage">
                         <option value="">All groups</option>
                         @foreach (var g in Groups)
                         {
@@ -56,13 +59,43 @@ else
                     </select>
                 </label>
             }
+            <label class="field"><span>Country</span>
+                <select value="@_countryFilter" @onchange="e => SetCountry(e.Value?.ToString() ?? string.Empty)">
+                    <option value="">All countries</option>
+                    @foreach (var country in Countries)
+                    {
+                        <option value="@country">@Formatting.Country(country)</option>
+                    }
+                </select>
+            </label>
+            <label class="field"><span>City</span>
+                <select @bind="_cityFilter" @bind:after="FirstPage">
+                    <option value="">All cities</option>
+                    @foreach (var city in Cities)
+                    {
+                        <option value="@city">@city</option>
+                    }
+                </select>
+            </label>
+            @if (Architectures.Count > 1)
+            {
+                <label class="field"><span>Architecture</span>
+                    <select @bind="_architectureFilter" @bind:after="FirstPage">
+                        <option value="">All</option>
+                        @foreach (var architecture in Architectures)
+                        {
+                            <option value="@architecture">@architecture</option>
+                        }
+                    </select>
+                </label>
+            }
             <label class="field"><span>Min. vCPUs</span>
-                <select @bind="_minCpus"><option value="1">1</option><option value="2">2</option><option value="4">4</option><option value="8">8</option><option value="16">16</option></select>
+                <select @bind="_minCpus" @bind:after="FirstPage"><option value="1">1</option><option value="2">2</option><option value="4">4</option><option value="8">8</option><option value="16">16</option></select>
             </label>
             <label class="field"><span>Min. memory</span>
-                <select @bind="_minMemory"><option value="1">1 GB</option><option value="4">4 GB</option><option value="8">8 GB</option><option value="16">16 GB</option><option value="32">32 GB</option></select>
+                <select @bind="_minMemory" @bind:after="FirstPage"><option value="1">1 GB</option><option value="2">2 GB</option><option value="4">4 GB</option><option value="8">8 GB</option><option value="16">16 GB</option><option value="32">32 GB</option></select>
             </label>
-            <label class="check"><input type="checkbox" @bind="_onlyAvailable" />Only available now</label>
+            <label class="check"><input type="checkbox" @bind="_onlyAvailable" @bind:after="FirstPage" />Only available now</label>
         </div>
         <div class="table-wrap" style="max-height: 460px">
             <table class="stack offers">
@@ -70,10 +103,13 @@ else
                     <tr><th>Type</th><th>Location</th><th>Group</th><th class="num">vCPU</th><th class="num">Memory</th><th class="num">Disk</th><th class="num">Monthly, net</th><th class="num">Gross</th></tr>
                 </thead>
                 <tbody>
-                    @foreach (var o in FilteredOffers)
+                    @foreach (var o in pageRows)
                     {
                         <tr class="@(o.Available ? "selectable" : "unavailable") @(o.Key == _selectedKey ? "selected" : null)" @onclick="() => Select(o)">
-                            <td><label class="offer-pick"><input type="radio" name="offer" checked="@(o.Key == _selectedKey)" disabled="@(!o.Available)" aria-label="@($"{o.TypeName} in {o.Location}")" /><span><strong>@o.TypeName</strong><span class="secondary">@o.CpuKind · @o.Architecture</span></span></label></td>
+                            <td><label class="offer-pick"><input type="radio" name="offer" checked="@(o.Key == _selectedKey)" disabled="@(!o.Available)" aria-label="@($"{o.TypeName} in {o.Location}")" /><span><span class="offer-name"><strong>@o.TypeName</strong>@if (o.Billing is { } billing)
+                                {
+                                    <BillingTag Billing="billing" Number="@(NoteNumber(footnotes, billing))" />
+                                }</span><span class="secondary">@o.CpuKind · @o.Architecture</span></span></label></td>
                             <td data-label="Location">@o.LocationCity<span class="secondary">@o.Location · @o.Country</span></td>
                             <td data-label="Group">@o.GroupName</td>
                             <td data-label="vCPU" class="num">@o.VCpus</td>
@@ -86,6 +122,17 @@ else
                 </tbody>
             </table>
         </div>
+        <Pager Total="visible.Count" @bind-Page="_page" Label="Offer pages" />
+        @if (footnotes.Count > 0)
+        {
+            <div class="offer-notes" role="note" aria-label="Billing notes">
+                @for (var i = 0; i < footnotes.Count; i++)
+                {
+                    var number = i + 1;
+                    <p><BillingTag Billing="footnotes[i]" Number="number" /><span>@footnotes[i].Note</span></p>
+                }
+            </div>
+        }
     </section>
 
     <section class="panel" aria-labelledby="configure">
@@ -93,7 +140,7 @@ else
             <h2 id="configure">2. Configure</h2>
             @if (Selected is { } chosen)
             {
-                <span class="tag accent">@chosen.TypeName · @chosen.LocationCity · @Formatting.Money(chosen.MonthlyNet, chosen.Currency)/mo</span>
+                <span class="tag accent">@chosen.TypeName · @chosen.LocationCity · @Formatting.Money(chosen.MonthlyNet, chosen.Currency)/mo@(chosen.Billing is { } b ? $" · {b.Label}" : "")</span>
             }
         </div>
         <div class="panel-body">
@@ -139,6 +186,10 @@ else
     private string? _error;
     private string? _selectedKey;
     private string _groupFilter = "";
+    private int _page = 1;
+    private string _countryFilter = "";
+    private string _cityFilter = "";
+    private string _architectureFilter = "";
     private string _name = "";
     private string _image = Images[0];
     private int _minCpus = 1;
@@ -150,9 +201,41 @@ else
 
     private IReadOnlyList<string> Groups => _offers?.Select(o => o.GroupName).Distinct().Order().ToList() ?? [];
 
+    private IReadOnlyList<string> Countries => _offers?.Select(o => o.Country).Distinct()
+        .OrderBy(Formatting.Country, StringComparer.CurrentCulture).ToList() ?? [];
+
+    // Cities follow the chosen country so the list stays short.
+    private IReadOnlyList<string> Cities => _offers?.Where(o => Matches(_countryFilter, o.Country))
+        .Select(o => o.LocationCity).Distinct().Order(StringComparer.CurrentCulture).ToList() ?? [];
+
+    private IReadOnlyList<string> Architectures => _offers?.Select(o => o.Architecture).Distinct().Order().ToList() ?? [];
+
     private IEnumerable<ServerOffer> FilteredOffers => _offers!
         .Where(o => o.VCpus >= _minCpus && o.MemoryGb >= _minMemory && (o.Available || !_onlyAvailable)
-                    && (_groupFilter.Length == 0 || o.GroupName == _groupFilter));
+                    && Matches(_groupFilter, o.GroupName)
+                    && Matches(_countryFilter, o.Country)
+                    && Matches(_cityFilter, o.LocationCity)
+                    && Matches(_architectureFilter, o.Architecture));
+
+    private void FirstPage() => _page = 1;
+
+    private static bool Matches(string filter, string value) => filter.Length == 0 || value == filter;
+
+    // Provider-specific billing remarks, listed once below the table and referenced by number from each offer.
+    // Billing remarks of the offers on this page, explained once below the table; each tag repeats its note's number.
+    private static List<OfferBilling> Footnotes(IEnumerable<ServerOffer> offers) => offers
+        .Select(o => o.Billing).OfType<OfferBilling>().DistinctBy(b => b.Note).ToList();
+
+    private static int NoteNumber(List<OfferBilling> notes, OfferBilling billing) =>
+        notes.FindIndex(n => n.Note == billing.Note) + 1;
+
+    private void SetCountry(string country)
+    {
+        _countryFilter = country;
+        _page = 1;
+        if (!Cities.Contains(_cityFilter))
+            _cityFilter = "";
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -183,7 +266,7 @@ else
         _error = null;
         try
         {
-            var command = new ProvisionServerCommand(offer.GroupId, _name.Trim(), offer.Location, offer.TypeName, _image);
+            var command = new ProvisionServerCommand(offer.GroupId, _name.Trim(), offer.Location, offer.TypeName, _image, offer.Billing?.Id);
             var id = await Runner.RunAsync<ProvisionServer, Guid>(u => u.ExecuteAsync(command, CancellationToken.None));
             Navigation.NavigateTo($"/servers/{id}");
         }

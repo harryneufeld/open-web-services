@@ -89,6 +89,17 @@ else
                         </div>
                         <span class="hint">Turning a kind off keeps its records in ows but stops refreshing them.</span>
                     </div>
+                    @if (type.HasCommitmentOffers)
+                    {
+                        <div class="field">
+                            <span class="field-label">Offers</span>
+                            <label class="check">
+                                <input type="checkbox" @bind="_showCommitmentOffers" />
+                                Show offers with a billing commitment
+                            </label>
+                            <span class="hint">For example monthly billing: cheaper than hourly, but billed for the whole period.</span>
+                        </div>
+                    }
                     @foreach (var field in type.CredentialFields)
                     {
                         var current = _view.Credentials?.FirstOrDefault(c => c.Key == field.Key)?.Display;
@@ -140,6 +151,7 @@ else
     private GroupView? _view;
     private string _name = "";
     private ResourceKind _enabled;
+    private bool _showCommitmentOffers = true;
     private Dictionary<string, string> _credentials = [];
     private string? _message;
     private bool _isError;
@@ -152,7 +164,7 @@ else
     {
         await LoadAsync();
         if (_view is not null)
-            (_name, _enabled) = (_view.Group.Name, _view.Group.EnabledResources);
+            (_name, _enabled, _showCommitmentOffers) = (_view.Group.Name, _view.Group.EnabledResources, _view.Group.ShowCommitmentOffers);
     }
 
     private async Task LoadAsync()
@@ -177,7 +189,7 @@ else
 
     private Task SaveAsync() => RunAsync(async () =>
     {
-        var command = new UpdateProviderGroupCommand(Id, _name, _enabled, _credentials);
+        var command = new UpdateProviderGroupCommand(Id, _name, _enabled, _credentials, _showCommitmentOffers);
         var report = await Runner.RunAsync<UpdateProviderGroup, SyncReport>(u => u.ExecuteAsync(command, CancellationToken.None));
         _credentials = [];
         (_message, _isError) = ($"Saved. {report}", !report.Succeeded);

@@ -13,7 +13,7 @@ internal sealed record OvhFlavor(
     OvhFlavorPlanCodes? PlanCodes,
     bool? Available);
 
-internal sealed record OvhFlavorPlanCodes(string? Hourly);
+internal sealed record OvhFlavorPlanCodes(string? Hourly, string? Monthly);
 
 internal sealed record OvhImage(string Id, string Name, string? Status);
 

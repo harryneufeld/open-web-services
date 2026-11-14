@@ -18,6 +18,7 @@ public sealed class GetServerOffers(IProviderGroupRepository groups, IProviderCo
             {
                 var provider = (await connections.ConnectAsync(group.Id, ct)).RequireServers();
                 offers.AddRange((await provider.GetOffersAsync(ct))
+                    .Where(o => o.Billing is null || group.ShowCommitmentOffers)
                     .Select(o => o with { GroupId = group.Id, GroupName = group.Name }));
             }
             catch (Exception ex) when (ex is ProviderException or ProviderNotConfiguredException or CapabilityNotSupportedException)
