@@ -159,7 +159,34 @@ internal sealed class OvhServerProvider(OvhApiClient api, string projectId, stri
             monthlyPrice.Net,
             monthlyPrice.Gross,
             currency,
-            Available: true);
+            Available: true)
+        {
+            Tier = Tier(flavor.Name),
+        };
+    }
+
+    /// <summary>
+    /// The product line follows the flavor's name prefix (b3-8, c3-4, d2-2, win-r2-30, ...). OVHcloud's Public Cloud
+    /// SLA promises 99.99 % monthly availability for instances and 99.95 % for Discovery instances; GPU and older
+    /// lines are left without a number rather than guessed.
+    /// </summary>
+    internal static OfferTier Tier(string flavorName)
+    {
+        var name = flavorName.ToLowerInvariant();
+        if (name.StartsWith("win-", StringComparison.Ordinal))
+            name = name[4..];
+        var prefix = new string(name.TakeWhile(char.IsAsciiLetterLower).ToArray());
+        return prefix switch
+        {
+            "d" => new OfferTier(ServerCategory.SharedBudget, "Discovery", 99.95m),
+            "b" => new OfferTier(ServerCategory.Dedicated, "General Purpose", 99.99m),
+            "c" => new OfferTier(ServerCategory.ComputeOptimized, "Compute Optimized", 99.99m),
+            "r" => new OfferTier(ServerCategory.MemoryOptimized, "Memory Optimized", 99.99m),
+            "i" => new OfferTier(ServerCategory.StorageOptimized, "Storage Optimized", 99.99m),
+            "t" or "l" or "h" or "a" or "rtx" => new OfferTier(ServerCategory.Gpu, "Cloud GPU", null),
+            "s" => new OfferTier(ServerCategory.SharedBudget, "Sandbox", null),
+            _ => new OfferTier(ServerCategory.Other, prefix.ToUpperInvariant(), null),
+        };
     }
 
     private static ProviderServer ToProviderServer(OvhInstance instance, OvhPriceList prices)

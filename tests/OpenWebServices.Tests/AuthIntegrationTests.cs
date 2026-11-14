@@ -89,6 +89,7 @@ public sealed partial class AuthIntegrationTests : IDisposable
     [InlineData("/servers/new", "New server")]
     [InlineData("/groups", "Provider groups")]
     [InlineData("/dns", "DNS zones")]
+    [InlineData("/domains", "Domains")]
     [InlineData("/tenant", "Members")]
     [InlineData("/admin", "Platform admin")]
     [InlineData("/account/security", "Account security")]

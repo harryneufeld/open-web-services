@@ -35,6 +35,7 @@
                     <NavLink href="/servers"><ServiceBadge Service="OwsService.Servers" />OC2<span class="plain">Servers</span></NavLink>
                     <span class="nav-label">Networking</span>
                     <NavLink href="/dns"><ServiceBadge Service="OwsService.Dns" />Route 66<span class="plain">DNS</span></NavLink>
+                    <NavLink href="/domains"><ServiceBadge Service="OwsService.Domains" />Lot 42<span class="plain">Domains</span></NavLink>
                     <span class="nav-label">Accounts</span>
                     <NavLink href="/groups"><ServiceBadge Service="OwsService.Groups" />IOU<span class="plain">Groups</span></NavLink>
                     <NavLink href="/tenant"><Icon Name="users" />Members</NavLink>
@@ -56,6 +57,7 @@
                         <button class="btn btn-ghost btn-sm" type="submit" title="Sign out"><Icon Name="logout" /><span class="sr-only">Sign out</span></button>
                     </form>
                 </div>
+                <p class="app-version" title="@AppVersion.Full">ows @AppVersion.Display</p>
             </aside>
             <nav class="tabbar" aria-label="Main">
                 <NavLink href="/" Match="NavLinkMatch.All"><Icon Name="overview" />Home</NavLink>

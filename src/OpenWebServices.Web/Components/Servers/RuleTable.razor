@@ -1,0 +1,24 @@
+@* Read-only list of inbound firewall rules. *@
+<div class="table-wrap">
+    <table class="stack">
+        <thead><tr><th>Protocol</th><th>Port</th><th>Sources</th><th>Description</th></tr></thead>
+        <tbody>
+            @foreach (var rule in Rules)
+            {
+                <tr>
+                    <td><span class="tag">@rule.Protocol.ToString().ToUpperInvariant()</span></td>
+                    <td data-label="Port" class="mono">@(rule.Port ?? "–")</td>
+                    <td data-label="Sources" class="mono values">@foreach (var source in rule.Sources)
+                        {
+                            <div>@(source switch { IpRanges.AnyIpv4 => "Any IPv4", IpRanges.AnyIpv6 => "Any IPv6", _ => source })</div>
+                        }</td>
+                    <td data-label="Description" class="muted">@rule.Description</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<FirewallRule> Rules { get; set; } = [];
+}

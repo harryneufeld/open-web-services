@@ -1,0 +1,248 @@
+@* Addresses, reverse DNS and private networks of one server, read live from the provider. *@
+@inject UseCaseRunner Runner
+
+<section class="panel" aria-labelledby="networking">
+    <div class="panel-header">
+        <div>
+            <h2 id="networking">Networking</h2>
+            <p>Public addresses, reverse DNS and private networks, live from the provider.</p>
+        </div>
+        <button class="btn btn-ghost btn-sm" disabled="@_loading" @onclick="LoadAsync">
+            @if (_loading)
+            {
+                <span class="spinner"></span>
+            }
+            else
+            {
+                <Icon Name="refresh" />
+            }
+            Reload
+        </button>
+    </div>
+    @if (_error is not null)
+    {
+        <div class="panel-body"><Notice Kind="error">@_error</Notice></div>
+    }
+    @if (_view is null)
+    {
+        <SkeletonRows Count="2" />
+    }
+    else if (_view.Networking is not { } net)
+    {
+        <div class="panel-body"><Notice>@_view.Unavailable</Notice></div>
+    }
+    else
+    {
+        <div class="panel-body stack">
+            <dl class="facts">
+                <div><dt>Public IPv4</dt><dd class="mono">@(net.PublicIpv4 ?? "–")</dd></div>
+                <div><dt>Public IPv6</dt><dd class="mono">@(net.PublicIpv6 ?? "–")</dd></div>
+            </dl>
+
+            <div class="subsection">
+                <h3>Reverse DNS</h3>
+                @if (!net.CanEditReverseDns && net.ReverseDns.Count == 0)
+                {
+                    <p class="hint">This provider's reverse DNS is not managed in ows. Change it in the provider's console.</p>
+                }
+                else
+                {
+                    <div class="table-wrap">
+                        <table class="stack">
+                            <thead><tr><th>Address</th><th>Host name</th><th><span class="sr-only">Actions</span></th></tr></thead>
+                            <tbody>
+                                @foreach (var entry in net.ReverseDns)
+                                {
+                                    <tr>
+                                        <td class="mono">@entry.Ip</td>
+                                        @if (_ptrEditIp == entry.Ip)
+                                        {
+                                            <td data-label="Host name"><input class="mono" @bind="_ptrValue" @bind:event="oninput" placeholder="mail.example.com" spellcheck="false" aria-label="Host name for @entry.Ip" /></td>
+                                            <td class="actions">
+                                                <button class="btn btn-sm" @onclick="() => _ptrEditIp = null">Cancel</button>
+                                                <button class="btn btn-sm btn-primary" disabled="@_busy" @onclick="() => SavePtrAsync(entry.Ip)">Save</button>
+                                            </td>
+                                        }
+                                        else
+                                        {
+                                            <td data-label="Host name" class="mono">@(entry.Ptr ?? "–")</td>
+                                            <td class="actions">
+                                                @if (net.CanEditReverseDns)
+                                                {
+                                                    <button class="btn btn-sm btn-ghost" disabled="@_busy" @onclick="() => EditPtr(entry)" title="Edit"><Icon Name="edit" /><span class="sr-only">Edit reverse DNS of @entry.Ip</span></button>
+                                                }
+                                            </td>
+                                        }
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                    @if (net.CanEditReverseDns && net.PublicIpv6 is not null)
+                    {
+                        <div class="inline-form">
+                            <label class="field"><span>IPv6 address</span><input class="mono" @bind="_newPtrIp" placeholder="@Ipv6Example(net.PublicIpv6)" spellcheck="false" /></label>
+                            <label class="field"><span>Host name</span><input class="mono" @bind="_newPtrValue" placeholder="mail.example.com" spellcheck="false" /></label>
+                            <button class="btn" disabled="@(_busy || string.IsNullOrWhiteSpace(_newPtrIp) || string.IsNullOrWhiteSpace(_newPtrValue))" @onclick="AddPtrAsync"><Icon Name="plus" />Set reverse DNS</button>
+                        </div>
+                        <p class="hint">Each address of the server's IPv6 network can have its own host name. Leave a host name empty to reset it.</p>
+                    }
+                }
+            </div>
+
+            <div class="subsection">
+                <h3>Private networks</h3>
+                @if (net.PrivateNetworks.Count == 0)
+                {
+                    <p class="hint">Not attached to a private network.</p>
+                }
+                else
+                {
+                    <ul class="list bordered">
+                        @foreach (var attachment in net.PrivateNetworks)
+                        {
+                            <li>
+                                <span class="grow"><strong>@attachment.NetworkName</strong><span class="mono subtle">@attachment.Ip</span></span>
+                                @if (net.CanManagePrivateNetworks)
+                                {
+                                    @if (_confirmDetach == attachment.NetworkId)
+                                    {
+                                        <button class="btn btn-sm" @onclick="() => _confirmDetach = null">Cancel</button>
+                                        <button class="btn btn-sm btn-danger-solid" disabled="@_busy" @onclick="() => DetachAsync(attachment.NetworkId)">Detach</button>
+                                    }
+                                    else
+                                    {
+                                        <button class="btn btn-sm" disabled="@_busy" @onclick="() => _confirmDetach = attachment.NetworkId">Detach…</button>
+                                    }
+                                }
+                            </li>
+                        }
+                    </ul>
+                }
+                @if (net.CanManagePrivateNetworks)
+                {
+                    var joinable = _view.AvailableNetworks.Where(n => net.PrivateNetworks.All(a => a.NetworkId != n.ExternalId)).ToList();
+                    @if (joinable.Count > 0)
+                    {
+                        <div class="inline-form">
+                            <label class="field"><span>Join a network</span>
+                                <select @bind="_joinNetworkId">
+                                    <option value="">Choose a network</option>
+                                    @foreach (var network in joinable)
+                                    {
+                                        <option value="@network.ExternalId">@network.Name (@network.IpRange)</option>
+                                    }
+                                </select>
+                            </label>
+                            <button class="btn" disabled="@(_busy || string.IsNullOrEmpty(_joinNetworkId))" @onclick="JoinAsync">Join</button>
+                        </div>
+                    }
+                    <div class="inline-form">
+                        <label class="field"><span>New network name</span><input @bind="_newNetworkName" @bind:event="oninput" placeholder="backend" maxlength="@ServerNetworks.MaxNetworkNameLength" /></label>
+                        <label class="field"><span>IP range</span><input class="mono" @bind="_newNetworkRange" placeholder="10.0.0.0/16" spellcheck="false" /></label>
+                        <button class="btn" disabled="@(_busy || string.IsNullOrWhiteSpace(_newNetworkName))" @onclick="CreateNetworkAsync"><Icon Name="plus" />Create and join</button>
+                    </div>
+                    <p class="hint">Servers in the same private network talk to each other without going over the internet. A subnet for the server's network zone is added when needed.</p>
+                }
+                else
+                {
+                    <p class="hint">Private networks of this provider are managed in its own console for now.</p>
+                }
+            </div>
+        </div>
+    }
+</section>
+
+@code {
+    private ServerNetworkView? _view;
+    private string? _error;
+    private bool _loading;
+    private bool _busy;
+    private string? _ptrEditIp;
+    private string _ptrValue = "";
+    private string _newPtrIp = "";
+    private string _newPtrValue = "";
+    private string? _confirmDetach;
+    private string _joinNetworkId = "";
+    private string _newNetworkName = "";
+    private string _newNetworkRange = "10.0.0.0/16";
+
+    [Parameter, EditorRequired] public Guid ServerId { get; set; }
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        try
+        {
+            _view = await Runner.RunAsync<ServerNetworks, ServerNetworkView>(u => u.GetAsync(ServerId, CancellationToken.None));
+        }
+        catch (Exception ex) when (UserFacingErrors.Matches(ex))
+        {
+            _error = ex.Message;
+            _view ??= new ServerNetworkView(null, [], "Networking could not be loaded.");
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private static string Ipv6Example(string prefix) => prefix.Split('/')[0] + "1";
+
+    private void EditPtr(ReverseDnsEntry entry)
+    {
+        _ptrEditIp = entry.Ip;
+        _ptrValue = entry.Ptr ?? "";
+    }
+
+    private Task SavePtrAsync(string ip) => RunAsync(async () =>
+    {
+        await Runner.RunAsync<ServerNetworks>(u => u.SetReverseDnsAsync(ServerId, ip, _ptrValue, CancellationToken.None));
+        _ptrEditIp = null;
+    });
+
+    private Task AddPtrAsync() => RunAsync(async () =>
+    {
+        await Runner.RunAsync<ServerNetworks>(u => u.SetReverseDnsAsync(ServerId, _newPtrIp, _newPtrValue, CancellationToken.None));
+        (_newPtrIp, _newPtrValue) = ("", "");
+    });
+
+    private Task JoinAsync() => RunAsync(async () =>
+    {
+        await Runner.RunAsync<ServerNetworks>(u => u.AttachAsync(ServerId, _joinNetworkId, CancellationToken.None));
+        _joinNetworkId = "";
+    });
+
+    private Task DetachAsync(string networkId) => RunAsync(async () =>
+    {
+        await Runner.RunAsync<ServerNetworks>(u => u.DetachAsync(ServerId, networkId, CancellationToken.None));
+        _confirmDetach = null;
+    });
+
+    private Task CreateNetworkAsync() => RunAsync(async () =>
+    {
+        await Runner.RunAsync<ServerNetworks>(u => u.CreateNetworkAsync(ServerId, _newNetworkName, _newNetworkRange, CancellationToken.None));
+        _newNetworkName = "";
+    });
+
+    private async Task RunAsync(Func<Task> action)
+    {
+        _busy = true;
+        _error = null;
+        try
+        {
+            await action();
+            await LoadAsync();
+        }
+        catch (Exception ex) when (UserFacingErrors.Matches(ex))
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}
