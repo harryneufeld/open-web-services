@@ -23,6 +23,11 @@ public sealed class ProviderGroup
     public DateTime? LastSyncAtUtc { get; private set; }
     public string? LastSyncError { get; private set; }
 
+    /// <summary>
+    /// Whether offers that commit to a billing period (e.g. monthly instead of hourly) are listed for this group.
+    /// </summary>
+    public bool ShowCommitmentOffers { get; private set; } = true;
+
     public bool HasCredentials => !string.IsNullOrEmpty(EncryptedCredentials);
 
     public static ProviderGroup Create(
@@ -69,6 +74,12 @@ public sealed class ProviderGroup
     public void SetEnabledResources(ResourceKind kinds, DateTime nowUtc)
     {
         EnabledResources = kinds;
+        UpdatedAtUtc = nowUtc;
+    }
+
+    public void SetShowCommitmentOffers(bool show, DateTime nowUtc)
+    {
+        ShowCommitmentOffers = show;
         UpdatedAtUtc = nowUtc;
     }
 

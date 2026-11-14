@@ -101,8 +101,11 @@ internal sealed class FakeServerProvider : IServerProvider
     public Task<IReadOnlyList<ServerOffer>> GetOffersAsync(CancellationToken ct) =>
         Task.FromResult<IReadOnlyList<ServerOffer>>(Offers);
 
+    /// <summary>Servers that exist but are not in the list yet, as with a provider whose list lags behind.</summary>
+    public List<string> HiddenFromList { get; } = [];
+
     public Task<IReadOnlyList<ProviderServer>> ListServersAsync(CancellationToken ct) =>
-        Task.FromResult<IReadOnlyList<ProviderServer>>(Servers.ToList());
+        Task.FromResult<IReadOnlyList<ProviderServer>>(Servers.Where(s => !HiddenFromList.Contains(s.ExternalId)).ToList());
 
     public Task<ProviderServer?> GetServerAsync(string externalId, CancellationToken ct) =>
         Task.FromResult(Servers.FirstOrDefault(s => s.ExternalId == externalId));

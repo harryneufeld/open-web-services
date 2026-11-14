@@ -127,7 +127,7 @@
             <table class="stack">
                 <thead><tr><th>When (UTC)</th><th>Event</th><th>Detail</th><th>Who</th><th>Tenant</th><th>IP</th></tr></thead>
                 <tbody>
-                    @foreach (var e in _audit)
+                    @foreach (var e in Paging.Slice(_audit, _auditPage))
                     {
                         <tr>
                             <td class="mono">@e.Record.AtUtc.ToString("yyyy-MM-dd HH:mm:ss")</td>
@@ -141,6 +141,7 @@
                 </tbody>
             </table>
         </div>
+        <Pager Total="_audit.Count" @bind-Page="_auditPage" Label="Security log pages" />
     }
 </section>
 
@@ -150,6 +151,7 @@
     private IReadOnlyList<TenantOverview>? _tenants;
     private IReadOnlyList<UserOverview>? _users;
     private IReadOnlyList<AuditView>? _audit;
+    private int _auditPage = 1;
     private Guid? _myId;
     private const string ResetAction = "reset";
     private (Guid, string)? _confirm;

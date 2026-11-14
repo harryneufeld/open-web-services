@@ -17,7 +17,8 @@ public sealed record UpdateProviderGroupCommand(
     Guid GroupId,
     string Name,
     ResourceKind EnabledResources,
-    IReadOnlyDictionary<string, string>? NewCredentials);
+    IReadOnlyDictionary<string, string>? NewCredentials,
+    bool ShowCommitmentOffers = true);
 
 /// <param name="Credentials">Masked stored credentials; only filled for a single group viewed by an admin.</param>
 public sealed record GroupView(
@@ -95,6 +96,7 @@ public sealed class UpdateProviderGroup(
 
         group.Rename(command.Name, clock.UtcNow);
         group.SetEnabledResources(command.EnabledResources & type.SupportedResources, clock.UtcNow);
+        group.SetShowCommitmentOffers(command.ShowCommitmentOffers, clock.UtcNow);
         await unitOfWork.SaveChangesAsync(ct);
 
         return await syncGroup.ExecuteAsync(group.Id, ct);

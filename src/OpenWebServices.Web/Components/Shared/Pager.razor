@@ -1,0 +1,29 @@
+@* Previous/next paging for a list rendered with Paging.Slice; hidden while everything fits on one page. *@
+@if (Total > Paging.PageSize)
+{
+    var current = Paging.Clamp(Page, Total);
+    var pages = Paging.PageCount(Total);
+    var first = (current - 1) * Paging.PageSize + 1;
+    var last = Math.Min(current * Paging.PageSize, Total);
+    <nav class="pager" aria-label="@Label">
+        <span class="pager-range">@first–@last of @Total.ToString("N0")</span>
+        <span class="pager-controls">
+            <button type="button" class="btn btn-sm btn-ghost" disabled="@(current == 1)" @onclick="() => GoAsync(current - 1)">
+                <Icon Name="chevron-left" /><span class="sr-only">Previous page</span>
+            </button>
+            <span class="pager-page" aria-live="polite">Page @current of @pages</span>
+            <button type="button" class="btn btn-sm btn-ghost" disabled="@(current == pages)" @onclick="() => GoAsync(current + 1)">
+                <Icon Name="chevron-right" /><span class="sr-only">Next page</span>
+            </button>
+        </span>
+    </nav>
+}
+
+@code {
+    [Parameter, EditorRequired] public int Total { get; set; }
+    [Parameter] public int Page { get; set; } = 1;
+    [Parameter] public EventCallback<int> PageChanged { get; set; }
+    [Parameter] public string Label { get; set; } = "Pages";
+
+    private Task GoAsync(int page) => PageChanged.InvokeAsync(page);
+}
