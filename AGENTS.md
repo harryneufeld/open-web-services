@@ -19,8 +19,9 @@ described in `README.md`; product context in `PRODUCT.md`; visual identity in `d
   pack the folder as `ows-linux-arm64.tar.gz` and install it with `sudo bash deploy/install-on-pi.sh <archive>`.
   Back up the database before installing a release that contains a migration.
 - Versions come from git via Nerdbank.GitVersioning: `version.json` holds major.minor, the patch is the number of
-  commits since that file last changed (every commit bumps it). Builds of `main` are e.g. `0.1.12`, other branches
-  add the commit hash. Raise `version` in `version.json` for a new minor/major (the patch restarts at 0). Builds need
+  commits since that file last changed (every commit bumps it), e.g. `0.1.12`; the full version carries the commit
+  id (`0.1.12+1a2b3c4d5e`). The height counts commits on the current branch, so merge to `main` before deploying a
+  release to keep numbers unique. Raise `version` in `version.json` for a new minor/major (the patch restarts at 0). Builds need
   the full git history (no shallow clones). The version shows in the sidebar and in the startup log.
 
 ## Conventions
