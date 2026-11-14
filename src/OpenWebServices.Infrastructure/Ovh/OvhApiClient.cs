@@ -4,46 +4,46 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Microsoft.Extensions.Logging;
 using OpenWebServices.Application.Abstractions;
 
 namespace OpenWebServices.Infrastructure.Ovh;
 
 /// <summary>OVHcloud API v1 client. Each request is signed with the account's application and consumer keys.</summary>
-internal sealed class OvhApiClient(HttpClient http, string applicationKey, string applicationSecret, string consumerKey)
+internal sealed class OvhApiClient(
+    HttpClient http, ILogger<OvhApiClient> logger, string applicationKey, string applicationSecret, string consumerKey)
 {
+    private static readonly HttpStatusCode[] NotFoundOnly = [HttpStatusCode.NotFound];
+    private static readonly TimeSpan ClockOffsetLifetime = TimeSpan.FromMinutes(5);
+
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web)
     {
-        PropertyNameCaseInsensitive = true,
         NumberHandling = JsonNumberHandling.AllowReadingFromString,
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     };
 
-    private readonly SemaphoreSlim _timeGate = new(1, 1);
-    private long? _serverTimeOffsetSeconds;
-    private DateTimeOffset _timeOffsetExpiresAt;
+    private readonly SemaphoreSlim _clockGate = new(1, 1);
+    private ClockOffset? _clock;
 
-    public async Task<List<T>> GetAllAsync<T>(string path, CancellationToken ct)
+    /// <summary>Escapes a value for use as one URL path segment or query value.</summary>
+    public static string Escape(string value) => Uri.EscapeDataString(value);
+
+    public async Task<List<T>> GetAllAsync<T>(string path, CancellationToken ct) =>
+        await GetAsync<List<T>>(path, ct) ?? throw new ProviderException($"OVHcloud returned no data for '{path}'.");
+
+    /// <summary>Returns null when the resource does not exist and <paramref name="allowNotFound"/> is set.</summary>
+    public Task<T?> GetAsync<T>(string path, CancellationToken ct, bool allowNotFound = false) where T : class =>
+        GetAsync<T>(path, ct, allowNotFound ? NotFoundOnly : []);
+
+    /// <summary>Returns null when OVH answers with one of <paramref name="missingWhen"/> instead of failing.</summary>
+    public async Task<T?> GetAsync<T>(string path, CancellationToken ct, IReadOnlyCollection<HttpStatusCode> missingWhen)
+        where T : class
     {
-        var body = await SendAsync(HttpMethod.Get, path, null, ct)
-                   ?? throw new ProviderException($"OVHcloud returned no data for '{path}'.");
-        try
-        {
-            return JsonSerializer.Deserialize<List<T>>(body, Json) ?? [];
-        }
-        catch (JsonException ex)
-        {
-            throw new ProviderException($"OVHcloud returned an unexpected response for '{path}': {ex.Message}", ex);
-        }
+        var body = await SendAsync(HttpMethod.Get, path, null, ct, missingWhen);
+        return body is null ? null : Deserialize<T>(body, path);
     }
 
-    public async Task<T> GetAsync<T>(string path, CancellationToken ct, bool allowNotFound = false) where T : class
-    {
-        var body = await SendAsync(HttpMethod.Get, path, null, ct, allowNotFound);
-        if (body is null)
-            return null!;
-        return Deserialize<T>(body, path);
-    }
-
+    /// <summary>Reads an unauthenticated endpoint, such as the public order catalog.</summary>
     public async Task<T> GetPublicAsync<T>(string path, CancellationToken ct)
     {
         try
@@ -73,9 +73,17 @@ internal sealed class OvhApiClient(HttpClient http, string applicationKey, strin
 
     public Task PutAsync(string path, object payload, CancellationToken ct) => SendAsync(HttpMethod.Put, path, payload, ct);
 
-    public Task DeleteAsync(string path, CancellationToken ct) => SendAsync(HttpMethod.Delete, path, null, ct, allowNotFound: true);
+    public Task DeleteAsync(string path, CancellationToken ct) => SendAsync(HttpMethod.Delete, path, null, ct, NotFoundOnly);
 
-    public async Task GetRawAsync(string path, CancellationToken ct) => _ = await SendAsync(HttpMethod.Get, path, null, ct);
+    /// <summary>Performs a GET and discards the body; throws <see cref="ProviderException"/> on any error.</summary>
+    public Task GetRawAsync(string path, CancellationToken ct) => SendAsync(HttpMethod.Get, path, null, ct);
+
+    /// <summary>OVH signature: "$1$" + SHA1(secret+consumer+method+url+body+timestamp), hex encoded.</summary>
+    internal static string Sign(string secret, string consumer, string method, string url, string body, long timestamp)
+    {
+        var preimage = string.Join("+", secret, consumer, method, url, body, timestamp.ToString(CultureInfo.InvariantCulture));
+        return "$1$" + Convert.ToHexStringLower(SHA1.HashData(Encoding.UTF8.GetBytes(preimage)));
+    }
 
     private static T Deserialize<T>(string body, string path)
     {
@@ -91,37 +99,41 @@ internal sealed class OvhApiClient(HttpClient http, string applicationKey, strin
     }
 
     private async Task<string?> SendAsync(
-        HttpMethod method, string path, object? payload, CancellationToken ct, bool allowNotFound = false)
+        HttpMethod method, string path, object? payload, CancellationToken ct,
+        IReadOnlyCollection<HttpStatusCode>? missingWhen = null)
     {
         var body = payload is null ? "" : JsonSerializer.Serialize(payload, Json);
-        using var request = new HttpRequestMessage(method, path);
+        using var request = new HttpRequestMessage(method, new Uri(http.BaseAddress!, path));
         if (payload is not null)
             request.Content = new StringContent(body, Encoding.UTF8, "application/json");
 
         try
         {
             var timestamp = await GetTimestampAsync(ct);
-            var url = request.RequestUri is { IsAbsoluteUri: true } absolute
-                ? absolute.AbsoluteUri
-                : new Uri(http.BaseAddress!, request.RequestUri!).AbsoluteUri;
-            var preimage = string.Join("+", applicationSecret, consumerKey, method.Method, url, body, timestamp.ToString(CultureInfo.InvariantCulture));
-            var signature = "$1$" + Convert.ToHexString(SHA1.HashData(Encoding.UTF8.GetBytes(preimage))).ToLowerInvariant();
             request.Headers.Add("X-Ovh-Application", applicationKey);
             request.Headers.Add("X-Ovh-Consumer", consumerKey);
             request.Headers.Add("X-Ovh-Timestamp", timestamp.ToString(CultureInfo.InvariantCulture));
-            request.Headers.Add("X-Ovh-Signature", signature);
+            request.Headers.Add("X-Ovh-Signature",
+                Sign(applicationSecret, consumerKey, method.Method, request.RequestUri!.AbsoluteUri, body, timestamp));
 
-            using (var response = await http.SendAsync(request, ct))
-            {
-                var responseBody = await response.Content.ReadAsStringAsync(ct);
-                if (response.StatusCode == HttpStatusCode.NotFound && allowNotFound)
-                    return null;
-                if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
-                    throw new ProviderException("OVHcloud rejected the credentials or API permissions. Check the application and consumer keys.");
-                if (!response.IsSuccessStatusCode)
-                    throw new ProviderException($"OVHcloud API error ({(int)response.StatusCode}): {ReadErrorMessage(responseBody)}");
+            using var response = await http.SendAsync(request, ct);
+            var responseBody = await response.Content.ReadAsStringAsync(ct);
+            if (response.IsSuccessStatusCode)
                 return responseBody;
-            }
+
+            var status = (int)response.StatusCode;
+            var reason = ReadErrorMessage(responseBody);
+            var tolerated = missingWhen?.Contains(response.StatusCode) == true;
+            logger.Log(tolerated ? LogLevel.Information : LogLevel.Warning,
+                "OVHcloud answered {Method} {Path} with {Status}: {Reason} (query id {QueryId})",
+                method.Method, path, status, reason, QueryId(response));
+            if (tolerated)
+                return null;
+            if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+                throw new ProviderException(
+                    $"OVHcloud refused {method.Method} {path} ({status}): {reason}. " +
+                    "Check the application and consumer keys and the access rules granted to the consumer key.");
+            throw new ProviderException($"OVHcloud API error on {method.Method} {path} ({status}): {reason}");
         }
         catch (HttpRequestException ex)
         {
@@ -133,16 +145,17 @@ internal sealed class OvhApiClient(HttpClient http, string applicationKey, strin
         }
     }
 
+    /// <summary>Signed requests must carry the API server's clock, so the local offset to it is cached briefly.</summary>
     private async Task<long> GetTimestampAsync(CancellationToken ct)
     {
-        if (_serverTimeOffsetSeconds is { } cached && DateTimeOffset.UtcNow < _timeOffsetExpiresAt)
-            return DateTimeOffset.UtcNow.ToUnixTimeSeconds() + cached;
+        if (_clock is { } cached && cached.IsValid)
+            return cached.Now;
 
-        await _timeGate.WaitAsync(ct);
+        await _clockGate.WaitAsync(ct);
         try
         {
-            if (_serverTimeOffsetSeconds is { } afterWait && DateTimeOffset.UtcNow < _timeOffsetExpiresAt)
-                return DateTimeOffset.UtcNow.ToUnixTimeSeconds() + afterWait;
+            if (_clock is { } afterWait && afterWait.IsValid)
+                return afterWait.Now;
 
             using var response = await http.GetAsync("auth/time", ct);
             if (!response.IsSuccessStatusCode)
@@ -151,9 +164,9 @@ internal sealed class OvhApiClient(HttpClient http, string applicationKey, strin
             if (!long.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var serverTime))
                 throw new ProviderException("OVHcloud returned an invalid API timestamp.");
 
-            _serverTimeOffsetSeconds = serverTime - DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-            _timeOffsetExpiresAt = DateTimeOffset.UtcNow.AddMinutes(5);
-            return DateTimeOffset.UtcNow.ToUnixTimeSeconds() + _serverTimeOffsetSeconds.Value;
+            var clock = new ClockOffset(serverTime - DateTimeOffset.UtcNow.ToUnixTimeSeconds(), DateTimeOffset.UtcNow + ClockOffsetLifetime);
+            _clock = clock;
+            return clock.Now;
         }
         catch (HttpRequestException ex)
         {
@@ -161,22 +174,32 @@ internal sealed class OvhApiClient(HttpClient http, string applicationKey, strin
         }
         finally
         {
-            _timeGate.Release();
+            _clockGate.Release();
         }
     }
+
+    private static string? QueryId(HttpResponseMessage response) =>
+        response.Headers.TryGetValues("X-Ovh-QueryId", out var values) ? values.FirstOrDefault() : null;
 
     private static string ReadErrorMessage(string body)
     {
         try
         {
             using var document = JsonDocument.Parse(body);
-            if (document.RootElement.TryGetProperty("message", out var message))
-                return message.GetString() ?? "no details";
-            return body;
+            return document.RootElement.ValueKind == JsonValueKind.Object
+                   && document.RootElement.TryGetProperty("message", out var message)
+                ? message.GetString() ?? "no details"
+                : body;
         }
         catch (JsonException)
         {
             return string.IsNullOrWhiteSpace(body) ? "no details" : body;
         }
+    }
+
+    private sealed record ClockOffset(long Seconds, DateTimeOffset ExpiresAt)
+    {
+        public bool IsValid => DateTimeOffset.UtcNow < ExpiresAt;
+        public long Now => DateTimeOffset.UtcNow.ToUnixTimeSeconds() + Seconds;
     }
 }
