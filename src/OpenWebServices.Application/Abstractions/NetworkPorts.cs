@@ -1,0 +1,100 @@
+namespace OpenWebServices.Application.Abstractions;
+
+/// <summary>The network setup of one server as the provider reports it.</summary>
+/// <param name="PublicIpv6">
+/// The server's IPv6 address or network, e.g. "2001:db8::/64". With a network, each address in it can get its own
+/// reverse DNS entry.
+/// </param>
+/// <param name="CanEditReverseDns">The provider lets ows change reverse DNS of the public addresses.</param>
+/// <param name="CanManagePrivateNetworks">The provider lets ows create private networks and attach servers.</param>
+public sealed record ServerNetworking(
+    string? PublicIpv4,
+    string? PublicIpv6,
+    IReadOnlyList<PrivateNetworkAttachment> PrivateNetworks,
+    IReadOnlyList<ReverseDnsEntry> ReverseDns,
+    bool CanEditReverseDns,
+    bool CanManagePrivateNetworks);
+
+/// <param name="NetworkName">The network's name, or its id when the provider reports none.</param>
+public sealed record PrivateNetworkAttachment(string NetworkId, string NetworkName, string Ip);
+
+/// <param name="Ptr">The host name the address resolves back to, or null when none is set.</param>
+/// <param name="IsRemovable">
+/// The entry can be deleted, e.g. an extra IPv6 address; the server's own IPv4 can only be changed or reset.
+/// </param>
+public sealed record ReverseDnsEntry(string Ip, string? Ptr, bool IsRemovable = false);
+
+/// <param name="ServerIds">External ids of the servers attached to the network.</param>
+public sealed record PrivateNetwork(string ExternalId, string Name, string IpRange, IReadOnlyList<string> ServerIds);
+
+/// <summary>Addresses and private networks of servers at a provider.</summary>
+public interface IServerNetworkProvider
+{
+    Task<ServerNetworking> GetServerNetworkingAsync(string externalServerId, CancellationToken ct);
+
+    /// <param name="ptr">The new host name, or null to reset it to the provider default.</param>
+    Task SetReverseDnsAsync(string externalServerId, string ip, string? ptr, CancellationToken ct);
+
+    Task<IReadOnlyList<PrivateNetwork>> ListPrivateNetworksAsync(CancellationToken ct);
+
+    /// <param name="ipRange">An RFC 1918 IPv4 range in CIDR notation, e.g. 10.0.0.0/16.</param>
+    /// <param name="forServerId">The server that joins next; providers with regional networks create it there.</param>
+    Task<PrivateNetwork> CreatePrivateNetworkAsync(string name, string ipRange, string forServerId, CancellationToken ct);
+
+    /// <summary>Attaches the server, adding a subnet in the server's network zone first when the network has none.</summary>
+    Task AttachToPrivateNetworkAsync(string externalServerId, string networkId, CancellationToken ct);
+
+    Task DetachFromPrivateNetworkAsync(string externalServerId, string networkId, CancellationToken ct);
+}
+
+/// <summary>Key/value labels on servers, e.g. env=production. Setting them replaces all labels of the server.</summary>
+public interface IServerLabelProvider
+{
+    Task<IReadOnlyDictionary<string, string>> GetLabelsAsync(string externalServerId, CancellationToken ct);
+
+    Task SetLabelsAsync(string externalServerId, IReadOnlyDictionary<string, string> labels, CancellationToken ct);
+}
+
+public enum FirewallProtocol { Tcp, Udp, Icmp }
+
+/// <summary>One inbound allow rule. Everything that no rule allows is dropped once a firewall applies to a server.</summary>
+/// <param name="Port">A port ("22") or range ("8000-8100"); null for ICMP.</param>
+/// <param name="Sources">Allowed source ranges in CIDR notation; 0.0.0.0/0 and ::/0 allow everyone.</param>
+public sealed record FirewallRule(FirewallProtocol Protocol, string? Port, IReadOnlyList<string> Sources, string? Description = null);
+
+/// <summary>A firewall applied to a server that ows did not create; shown, never changed.</summary>
+public sealed record AppliedFirewall(string ExternalId, string Name, IReadOnlyList<FirewallRule> InboundRules);
+
+/// <param name="ManagedRules">Inbound rules of the firewall ows manages for this server; null when there is none.</param>
+/// <param name="OtherFirewalls">Further firewalls applied to the server, e.g. created in the provider's console.</param>
+public sealed record ServerFirewall(IReadOnlyList<FirewallRule>? ManagedRules, IReadOnlyList<AppliedFirewall> OtherFirewalls)
+{
+    public bool IsFiltered => ManagedRules is not null || OtherFirewalls.Count > 0;
+
+    /// <summary>What the provider's firewall can express; the UI adapts its form to it.</summary>
+    public FirewallLimits Limits { get; init; } = FirewallLimits.Full;
+}
+
+/// <param name="FiltersIpv6">IPv6 traffic is filtered too; when false, IPv6 sources are ignored and IPv6 stays open.</param>
+/// <param name="StoresDescriptions">Rule descriptions are kept at the provider.</param>
+/// <param name="MaxRules">How many rules fit, counting one per IPv4 source; null when the limit is not a concern.</param>
+/// <param name="Note">How the provider's firewall works, shown with the rules.</param>
+public sealed record FirewallLimits(bool FiltersIpv6, bool StoresDescriptions, int? MaxRules, string? Note = null)
+{
+    public static readonly FirewallLimits Full = new(true, true, null);
+}
+
+/// <summary>
+/// Provider firewalls. ows manages one firewall per server and leaves every other firewall alone, so rules set up in the
+/// provider's console keep working.
+/// </summary>
+public interface IFirewallProvider
+{
+    Task<ServerFirewall> GetServerFirewallAsync(string externalServerId, CancellationToken ct);
+
+    /// <summary>Creates the server's ows firewall or replaces its rules. Outbound traffic stays unrestricted.</summary>
+    Task SetServerFirewallAsync(string externalServerId, IReadOnlyList<FirewallRule> inboundRules, CancellationToken ct);
+
+    /// <summary>Removes the server's ows firewall, if any. Safe to call for servers without one.</summary>
+    Task RemoveServerFirewallAsync(string externalServerId, CancellationToken ct);
+}

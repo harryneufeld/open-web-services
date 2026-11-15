@@ -22,15 +22,23 @@ internal sealed record HetznerServerType(
     List<HetznerTypeLocation>? Locations,
     JsonElement? Deprecation);
 
-internal sealed record HetznerLocation(string Name, string City, string Country);
+internal sealed record HetznerLocation(string Name, string City, string Country, string? NetworkZone = null);
 
 internal sealed record HetznerDatacenterTypes(List<long> Available);
 
 internal sealed record HetznerDatacenter(HetznerLocation Location, HetznerDatacenterTypes ServerTypes);
 
-internal sealed record HetznerIpv4(string Ip);
+internal sealed record HetznerIpv4(string Ip, string? DnsPtr = null);
 
-internal sealed record HetznerPublicNet(HetznerIpv4? Ipv4);
+internal sealed record HetznerDnsPtr(string Ip, string DnsPtr);
+
+internal sealed record HetznerIpv6(string Ip, List<HetznerDnsPtr>? DnsPtr);
+
+internal sealed record HetznerFirewallRef(long Id, string? Status);
+
+internal sealed record HetznerPublicNet(HetznerIpv4? Ipv4, HetznerIpv6? Ipv6 = null, List<HetznerFirewallRef>? Firewalls = null);
+
+internal sealed record HetznerPrivateNet(long Network, string Ip);
 
 internal sealed record HetznerImage(string? Name, string? Description);
 
@@ -41,7 +49,9 @@ internal sealed record HetznerServer(
     HetznerPublicNet? PublicNet,
     HetznerServerType? ServerType,
     HetznerLocation? Location,
-    HetznerImage? Image);
+    HetznerImage? Image,
+    List<HetznerPrivateNet>? PrivateNet = null,
+    Dictionary<string, string>? Labels = null);
 
 internal sealed record HetznerServerEnvelope(HetznerServer Server);
 
@@ -87,3 +97,63 @@ internal sealed record HetznerSetRecordsBody(List<HetznerRecord> Records);
 
 /// <summary>Serialized with ttl: null on purpose, which resets the RRset to the zone default.</summary>
 internal sealed record HetznerChangeTtlBody(int? Ttl);
+
+// Networking
+
+internal sealed record HetznerChangeDnsPtrBody(string Ip, string? DnsPtr);
+
+internal sealed record HetznerSubnet(string Type, string? IpRange, string NetworkZone);
+
+internal sealed record HetznerNetwork(long Id, string Name, string IpRange, List<HetznerSubnet>? Subnets, List<long>? Servers);
+
+internal sealed record HetznerNetworkEnvelope(HetznerNetwork Network);
+
+internal sealed record HetznerCreateNetworkBody(string Name, string IpRange, Dictionary<string, string> Labels);
+
+internal sealed record HetznerAddSubnetBody(string Type, string NetworkZone, string IpRange);
+
+internal sealed record HetznerNetworkRefBody(long Network);
+
+internal sealed record HetznerAction(long Id, string Status, HetznerActionError? Error);
+
+internal sealed record HetznerActionError(string? Code, string? Message);
+
+internal sealed record HetznerActionEnvelope(HetznerAction Action);
+
+internal sealed record HetznerActionsEnvelope(List<HetznerAction>? Actions)
+{
+    public IEnumerable<HetznerAction> All => Actions ?? [];
+}
+
+// Firewalls
+
+internal sealed record HetznerFirewallRule(
+    string Direction,
+    string Protocol,
+    string? Port,
+    List<string>? SourceIps,
+    List<string>? DestinationIps,
+    string? Description);
+
+internal sealed record HetznerFirewallServerRef(long Id);
+
+internal sealed record HetznerFirewallResource(string Type, HetznerFirewallServerRef? Server);
+
+internal sealed record HetznerFirewall(
+    long Id,
+    string Name,
+    Dictionary<string, string>? Labels,
+    List<HetznerFirewallRule> Rules,
+    List<HetznerFirewallResource>? AppliedTo);
+
+internal sealed record HetznerCreateFirewallBody(
+    string Name,
+    Dictionary<string, string> Labels,
+    List<HetznerFirewallRule> Rules,
+    List<HetznerFirewallResource> ApplyTo);
+
+internal sealed record HetznerSetRulesBody(List<HetznerFirewallRule> Rules);
+
+internal sealed record HetznerFirewallResourcesBody(List<HetznerFirewallResource> RemoveFrom);
+
+internal sealed record HetznerLabelsBody(Dictionary<string, string> Labels);

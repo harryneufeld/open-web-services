@@ -80,6 +80,7 @@ builder.Services.AddRateLimiter(options =>
 });
 
 var app = builder.Build();
+app.Logger.LogInformation("Starting ows {Version}", AppVersion.Full);
 
 if (app.Configuration.GetValue("Database:MigrateOnStartup", true))
     await app.Services.MigrateDatabaseAsync();

@@ -40,6 +40,7 @@ Every service has a playful name, a badge colour and always a plain label next t
 |---|---|---|---|
 | OC2 | OC2 | Servers | Ordinary Compute Cloud. Servers at any provider you connect. |
 | 66 | Route 66 | DNS | DNS that takes you where you're going. Get your kicks on port 53. |
+| 42 | Lot 42 | Domains | A plot of the internet with your name on it. Search, compare, claim. |
 | IOU | IOU | Provider groups | Identity of Owners & Users. Who's paying for what, honestly. |
 | S4 | S4 | Storage (not built yet) | Simply Some Storage Service. One more S than you'd expect. |
 

@@ -1,4 +1,5 @@
 @page "/servers/new"
+@using System.Globalization
 @rendermode InteractiveServer
 @inject UseCaseRunner Runner
 @inject NavigationManager Navigation
@@ -89,6 +90,27 @@ else
                     </select>
                 </label>
             }
+            @if (Categories.Count > 1)
+            {
+                <label class="field"><span>Category</span>
+                    <select @bind="_categoryFilter" @bind:after="FirstPage">
+                        <option value="">All categories</option>
+                        @foreach (var category in Categories)
+                        {
+                            <option value="@category">@ServerCategories.Label(category)</option>
+                        }
+                    </select>
+                </label>
+            }
+            <label class="field"><span>Min. availability SLA</span>
+                <select @bind="_minSla" @bind:culture="CultureInfo.InvariantCulture" @bind:after="FirstPage">
+                    <option value="0">Any</option>
+                    @foreach (var sla in SlaLevels)
+                    {
+                        <option value="@sla.ToString(CultureInfo.InvariantCulture)">@Formatting.Percent(sla)</option>
+                    }
+                </select>
+            </label>
             <label class="field"><span>Min. vCPUs</span>
                 <select @bind="_minCpus" @bind:after="FirstPage"><option value="1">1</option><option value="2">2</option><option value="4">4</option><option value="8">8</option><option value="16">16</option></select>
             </label>
@@ -97,10 +119,14 @@ else
             </label>
             <label class="check"><input type="checkbox" @bind="_onlyAvailable" @bind:after="FirstPage" />Only available now</label>
         </div>
+        @if (Enum.TryParse<ServerCategory>(_categoryFilter, out var chosenCategory))
+        {
+            <p class="toolbar-note">@ServerCategories.Describe(chosenCategory)</p>
+        }
         <div class="table-wrap" style="max-height: 460px">
             <table class="stack offers">
                 <thead>
-                    <tr><th>Type</th><th>Location</th><th>Group</th><th class="num">vCPU</th><th class="num">Memory</th><th class="num">Disk</th><th class="num">Monthly, net</th><th class="num">Gross</th></tr>
+                    <tr><th>Type</th><th>Location</th><th>Group</th><th class="num" title="Monthly availability the provider's SLA promises">SLA</th><th class="num">vCPU</th><th class="num">Memory</th><th class="num">Disk</th><th class="num">Monthly, net</th><th class="num">Gross</th></tr>
                 </thead>
                 <tbody>
                     @foreach (var o in pageRows)
@@ -109,9 +135,10 @@ else
                             <td><label class="offer-pick"><input type="radio" name="offer" checked="@(o.Key == _selectedKey)" disabled="@(!o.Available)" aria-label="@($"{o.TypeName} in {o.Location}")" /><span><span class="offer-name"><strong>@o.TypeName</strong>@if (o.Billing is { } billing)
                                 {
                                     <BillingTag Billing="billing" Number="@(NoteNumber(footnotes, billing))" />
-                                }</span><span class="secondary">@o.CpuKind · @o.Architecture</span></span></label></td>
+                                }</span><span class="secondary">@TierLine(o)</span></span></label></td>
                             <td data-label="Location">@o.LocationCity<span class="secondary">@o.Location · @o.Country</span></td>
                             <td data-label="Group">@o.GroupName</td>
+                            <td data-label="SLA" class="num muted">@(o.Tier.AvailabilitySla is { } sla ? Formatting.Percent(sla) : "–")</td>
                             <td data-label="vCPU" class="num">@o.VCpus</td>
                             <td data-label="Memory" class="num">@o.MemoryGb GB</td>
                             <td data-label="Disk" class="num">@o.DiskGb GB</td>
@@ -190,6 +217,8 @@ else
     private string _countryFilter = "";
     private string _cityFilter = "";
     private string _architectureFilter = "";
+    private string _categoryFilter = "";
+    private decimal _minSla;
     private string _name = "";
     private string _image = Images[0];
     private int _minCpus = 1;
@@ -208,6 +237,14 @@ else
     private IReadOnlyList<string> Cities => _offers?.Where(o => Matches(_countryFilter, o.Country))
         .Select(o => o.LocationCity).Distinct().Order(StringComparer.CurrentCulture).ToList() ?? [];
 
+    private static readonly decimal[] SlaLevels = [99.9m, 99.95m, 99.99m];
+
+    private IReadOnlyList<ServerCategory> Categories => _offers?.Select(o => o.Tier.Category).Distinct()
+        .OrderBy(c => ServerCategories.All.ToList().IndexOf(c)).ToList() ?? [];
+
+    private static string TierLine(ServerOffer offer) => string.Join(" · ",
+        new[] { offer.Tier.ProductLine, offer.CpuKind, offer.Architecture }.Where(part => !string.IsNullOrWhiteSpace(part)));
+
     private IReadOnlyList<string> Architectures => _offers?.Select(o => o.Architecture).Distinct().Order().ToList() ?? [];
 
     private IEnumerable<ServerOffer> FilteredOffers => _offers!
@@ -215,7 +252,9 @@ else
                     && Matches(_groupFilter, o.GroupName)
                     && Matches(_countryFilter, o.Country)
                     && Matches(_cityFilter, o.LocationCity)
-                    && Matches(_architectureFilter, o.Architecture));
+                    && Matches(_architectureFilter, o.Architecture)
+                    && Matches(_categoryFilter, o.Tier.Category.ToString())
+                    && (_minSla == 0 || o.Tier.AvailabilitySla >= _minSla));
 
     private void FirstPage() => _page = 1;
 

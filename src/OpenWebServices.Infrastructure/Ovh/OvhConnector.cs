@@ -27,12 +27,11 @@ internal sealed class OvhConnector(IHttpClientFactory httpClients, ILogger<OvhAp
     public ProviderTypeInfo Type { get; } = new(
         ProviderType,
         "OVHcloud",
-        "Uses OVHcloud API v1 credentials for an account and Public Cloud project. Create an application key, " +
-        "application secret, and consumer key. The consumer key needs GET /me; GET, POST and DELETE on " +
-        "/cloud/project/{id}/region, /flavor, /image, /instance, /instance/* and /sshkey; and GET, POST, PUT and " +
-        "DELETE on /domain/zone/* (full list in docs/ovh.md). DNS zones must already exist in OVHcloud; this " +
-        "connector manages their records.",
-        ResourceKind.Servers | ResourceKind.Dns,
+        "One group per Public Cloud project. Create an application key and secret, then a consumer key with the " +
+        "access rules GET, POST, PUT and DELETE on /* (setup steps and a narrower alternative in docs/ovh.md). " +
+        "Enable DNS and domain registrations on only one group per OVHcloud account. DNS zones must already exist " +
+        "in OVHcloud; this connector manages their records.",
+        ResourceKind.Servers | ResourceKind.Dns | ResourceKind.Domains,
         [
             new CredentialField(EndpointKey, "API endpoint (ovh-eu, ovh-ca, or ovh-us)", IsSecret: false,
                 Help: "Choose the OVHcloud API region where your account is managed."),
@@ -40,7 +39,7 @@ internal sealed class OvhConnector(IHttpClientFactory httpClients, ILogger<OvhAp
             new CredentialField(ApplicationSecret, "Application secret"),
             new CredentialField(ConsumerKey, "Consumer key"),
             new CredentialField(ProjectIdKey, "Public Cloud project ID", IsSecret: false,
-                Help: "The Public Cloud project that contains the instances to manage."),
+                Help: "The Public Cloud project this group manages. Add one group per project."),
             new CredentialField(SubsidiaryKey, "OVHcloud subsidiary", IsSecret: false,
                 Help: "Two-letter country code used for pricing, such as FR, DE, CA, or US."),
         ],
@@ -76,6 +75,14 @@ internal sealed class OvhConnector(IHttpClientFactory httpClients, ILogger<OvhAp
         public ProviderTypeInfo Type => type;
         public IServerProvider Servers { get; } = new OvhServerProvider(api, projectId, subsidiary, endpoint);
         public IDnsProvider Dns { get; } = new OvhDnsProvider(api);
+        public IServerNetworkProvider Networks { get; } = new OvhNetworkProvider(api, projectId);
+
+        // API v1 has no security groups for Public Cloud instances; the Edge Network Firewall is used instead.
+        public IFirewallProvider Firewalls { get; } = new OvhFirewallProvider(api, projectId);
+        public IDomainRegistrar Domains { get; } = new OvhDomainRegistrar(api, subsidiary);
+
+        // Public Cloud instances have no labels in API v1.
+        public IServerLabelProvider? ServerLabels => null;
 
         public Task VerifyAsync(CancellationToken ct) => api.GetRawAsync("me", ct);
     }

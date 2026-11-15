@@ -104,7 +104,29 @@ internal sealed class HetznerServerProvider(HetznerApiClient api) : IServerProvi
         return new ServerOffer(
             HetznerConnector.ProviderType, price.Location, location?.City ?? price.Location, location?.Country ?? "",
             type.Name, type.Cores, type.CpuType, type.Architecture, type.Memory, type.Disk,
-            price.PriceMonthly.Net, price.PriceMonthly.Gross, Currency, available);
+            price.PriceMonthly.Net, price.PriceMonthly.Gross, Currency, available)
+        {
+            Tier = Tier(type.Name, type.CpuType),
+        };
+    }
+
+    /// <summary>Hetzner's Cloud SLA promises 99.9 % monthly availability for every server type.</summary>
+    internal const decimal AvailabilitySla = 99.9m;
+
+    /// <summary>The product line follows the type's name prefix (cx23, cax11, cpx31, ccx13, ...).</summary>
+    internal static OfferTier Tier(string typeName, string cpuType)
+    {
+        var name = typeName.ToLowerInvariant();
+        var (category, line) = name switch
+        {
+            _ when name.StartsWith("ccx", StringComparison.Ordinal) => (ServerCategory.Dedicated, "General Purpose"),
+            _ when name.StartsWith("cpx", StringComparison.Ordinal) => (ServerCategory.SharedPerformance, "Regular Performance"),
+            _ when name.StartsWith("cax", StringComparison.Ordinal) => (ServerCategory.SharedBudget, "Cost-Optimized (Arm)"),
+            _ when name.StartsWith("cx", StringComparison.Ordinal) => (ServerCategory.SharedBudget, "Cost-Optimized"),
+            _ when cpuType == "dedicated" => (ServerCategory.Dedicated, "Dedicated vCPU"),
+            _ => (ServerCategory.SharedBudget, "Shared vCPU"),
+        };
+        return new OfferTier(category, line, AvailabilitySla);
     }
 
     private static bool IsDeprecatedAt(HetznerServerType type, string location) =>

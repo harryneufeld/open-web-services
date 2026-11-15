@@ -162,7 +162,7 @@ internal sealed class FakeDnsProvider : IDnsProvider
 internal sealed class FakeConnection : IProviderConnection
 {
     public static readonly ProviderTypeInfo FakeType = new(
-        "fake", "Fake Cloud", "for tests", ResourceKind.Servers | ResourceKind.Dns,
+        "fake", "Fake Cloud", "for tests", ResourceKind.Servers | ResourceKind.Dns | ResourceKind.Domains,
         [new CredentialField("api_token", "API token")]);
 
     public ProviderTypeInfo Type => FakeType;
@@ -170,6 +170,13 @@ internal sealed class FakeConnection : IProviderConnection
     public FakeDnsProvider DnsProvider { get; } = new();
     public IServerProvider Servers => ServerProvider;
     public IDnsProvider Dns => DnsProvider;
+    public FakeFirewallProvider? FirewallProvider { get; set; } = new();
+    public FakeDomainRegistrar? Registrar { get; set; } = new();
+    public IServerNetworkProvider? Networks => null;
+    public IFirewallProvider? Firewalls => FirewallProvider;
+    public IDomainRegistrar? Domains => Registrar;
+    public FakeLabelProvider? LabelProvider { get; set; } = new();
+    public IServerLabelProvider? ServerLabels => LabelProvider;
     public bool RejectCredentials { get; set; }
 
     public Task VerifyAsync(CancellationToken ct) =>
@@ -211,4 +218,67 @@ internal static class TestData
 
     public static ProviderServer Remote(string id, string name = "web", ObservedServerState state = ObservedServerState.Running) =>
         new(id, name, state, "203.0.113." + id, "fsn1", "cx23", "ubuntu-24.04", 4m, "EUR");
+}
+
+internal sealed class FakeFirewallProvider : IFirewallProvider
+{
+    public Dictionary<string, IReadOnlyList<FirewallRule>> Managed { get; } = [];
+    public bool FailOnRemove { get; set; }
+
+    public Task<ServerFirewall> GetServerFirewallAsync(string externalServerId, CancellationToken ct) =>
+        Task.FromResult(new ServerFirewall(Managed.GetValueOrDefault(externalServerId), []));
+
+    public Task SetServerFirewallAsync(string externalServerId, IReadOnlyList<FirewallRule> inboundRules, CancellationToken ct)
+    {
+        Managed[externalServerId] = inboundRules;
+        return Task.CompletedTask;
+    }
+
+    public Task RemoveServerFirewallAsync(string externalServerId, CancellationToken ct)
+    {
+        if (FailOnRemove)
+            throw new ProviderException("firewall api down");
+        Managed.Remove(externalServerId);
+        return Task.CompletedTask;
+    }
+}
+
+internal sealed class FakeDomainRegistrar : IDomainRegistrar
+{
+    public HashSet<string> Taken { get; } = ["taken.com"];
+    public List<IReadOnlyList<string>> Checked { get; } = [];
+    public List<(string QuoteId, DomainOrderOptions Options)> Placed { get; } = [];
+
+    public Task<IReadOnlyList<DomainAvailability>> CheckAsync(IReadOnlyList<string> domains, CancellationToken ct)
+    {
+        Checked.Add(domains);
+        return Task.FromResult<IReadOnlyList<DomainAvailability>>(
+            [.. domains.Select(d => new DomainAvailability(d, !Taken.Contains(d), false, Taken.Contains(d) ? null : 9.99m, 12.99m, "EUR"))]);
+    }
+
+    public Task<DomainQuote> QuoteAsync(string domain, bool ownerIsOfLegalAge, CancellationToken ct) =>
+        Task.FromResult(new DomainQuote("cart-1", domain, [new DomainQuoteLine(domain, 9.99m)], 9.99m, 11.89m, "EUR", []));
+
+    public Task<PlacedDomainOrder> PlaceOrderAsync(string quoteId, DomainOrderOptions options, CancellationToken ct)
+    {
+        Placed.Add((quoteId, options));
+        return Task.FromResult(new PlacedDomainOrder("1234", "https://registrar.example/pay/1234", 11.89m, "EUR", options.PayWithDefaultMethod));
+    }
+
+    public Task<IReadOnlyList<RegisteredDomain>> ListDomainsAsync(CancellationToken ct) =>
+        Task.FromResult<IReadOnlyList<RegisteredDomain>>([new RegisteredDomain("mine.com")]);
+}
+
+internal sealed class FakeLabelProvider : IServerLabelProvider
+{
+    public Dictionary<string, IReadOnlyDictionary<string, string>> Labels { get; } = [];
+
+    public Task<IReadOnlyDictionary<string, string>> GetLabelsAsync(string externalServerId, CancellationToken ct) =>
+        Task.FromResult(Labels.GetValueOrDefault(externalServerId) ?? new Dictionary<string, string>());
+
+    public Task SetLabelsAsync(string externalServerId, IReadOnlyDictionary<string, string> labels, CancellationToken ct)
+    {
+        Labels[externalServerId] = labels;
+        return Task.CompletedTask;
+    }
 }

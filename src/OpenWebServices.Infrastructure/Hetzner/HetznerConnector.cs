@@ -36,6 +36,12 @@ internal sealed class HetznerConnector(IHttpClientFactory httpClients) : IProvid
         public ProviderTypeInfo Type => type;
         public IServerProvider Servers { get; } = new HetznerServerProvider(api);
         public IDnsProvider Dns { get; } = new HetznerDnsProvider(api);
+        public IServerNetworkProvider Networks { get; } = new HetznerNetworkProvider(api);
+        public IFirewallProvider Firewalls { get; } = new HetznerFirewallProvider(api);
+        public IServerLabelProvider ServerLabels { get; } = new HetznerLabelProvider(api);
+
+        // Hetzner Cloud has no domain registration API.
+        public IDomainRegistrar? Domains => null;
 
         // Any authenticated call proves the token; listing one server is the cheapest.
         public Task VerifyAsync(CancellationToken ct) => api.GetRawAsync("servers?per_page=1", ct);

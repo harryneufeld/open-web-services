@@ -10,6 +10,10 @@ public sealed class ProviderNotConfiguredException(string groupName)
 public sealed class CapabilityNotSupportedException(string provider, ResourceKind kind)
     : Exception($"{provider} does not support {ResourceKinds.Label(kind)}.");
 
+/// <summary>A provider supports a resource kind but not one of its features, e.g. firewalls for its servers.</summary>
+public sealed class FeatureNotSupportedException(string provider, string feature)
+    : Exception($"ows does not support {feature} at {provider} yet.");
+
 /// <summary>A hosting provider rejected a request or could not be reached.</summary>
 public sealed class ProviderException(string message, Exception? inner = null) : Exception(message, inner);
 
