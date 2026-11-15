@@ -164,3 +164,31 @@ public sealed class PlaceDomainOrder(
         return order;
     }
 }
+
+/// <summary>
+/// Cancels a domain at the end of its paid term, or withdraws the cancellation. Like ordering, it changes what the
+/// account pays for, so it needs the Admin role.
+/// </summary>
+public sealed class ChangeDomainCancellation(
+    AccessContext access,
+    IProviderGroupRepository groups,
+    IProviderConnectionFactory connections,
+    IAuditLog audit,
+    IUnitOfWork unitOfWork)
+{
+    public async Task ExecuteAsync(Guid groupId, string domain, bool endAtExpiry, CancellationToken ct)
+    {
+        var tenantId = access.Require(TenantRole.Admin);
+        if (string.IsNullOrWhiteSpace(domain))
+            throw new DomainException("Choose a domain.");
+        var name = domain.Trim().ToLowerInvariant();
+
+        var registrar = await QuoteDomainOrder.RegistrarAsync(groups, connections, groupId, ct);
+        await registrar.SetEndAtExpiryAsync(name, endAtExpiry, ct);
+
+        audit.Add(endAtExpiry
+            ? new AuditEntry(AuditTypes.DomainCancelled, $"Cancelled {name}: it ends when its current term expires", access.UserId, tenantId)
+            : new AuditEntry(AuditTypes.DomainCancellationWithdrawn, $"Withdrew the cancellation of {name}: it renews again", access.UserId, tenantId));
+        await unitOfWork.SaveChangesAsync(ct);
+    }
+}

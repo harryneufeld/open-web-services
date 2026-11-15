@@ -87,8 +87,100 @@ internal sealed class OvhDomainRegistrar(OvhApiClient api, string subsidiary) : 
             options.PayWithDefaultMethod);
     }
 
-    public async Task<IReadOnlyList<RegisteredDomain>> ListDomainsAsync(CancellationToken ct) =>
-        [.. (await api.GetAllAsync<string>("domain", ct)).Select(name => new RegisteredDomain(name))];
+    public async Task<IReadOnlyList<RegisteredDomain>> ListDomainsAsync(CancellationToken ct)
+    {
+        var names = await api.GetAllAsync<string>("domain", ct);
+        var domains = new RegisteredDomain[names.Count];
+        await Parallel.ForEachAsync(
+            Enumerable.Range(0, names.Count),
+            new ParallelOptions { MaxDegreeOfParallelism = MaxConcurrentChecks, CancellationToken = ct },
+            async (i, token) => domains[i] = await DescribeAsync(names[i], token));
+        return domains;
+    }
+
+    public async Task SetEndAtExpiryAsync(string domain, bool endAtExpiry, CancellationToken ct)
+    {
+        var path = $"domain/{Escape(domain)}/serviceInfos";
+        var info = await api.GetAsync<OvhServiceInfos>(path, ct)
+                   ?? throw new ProviderException($"OVHcloud returned no service details for {domain}.");
+        if (endAtExpiry && info.CanDeleteAtExpiration == false)
+        {
+            throw new ProviderException(
+                $"OVHcloud does not allow cancelling {domain} right now, for example while a renewal or transfer is in progress. Try again later or use the OVHcloud Control Panel.");
+        }
+
+        // Only the deletion flag changes; the renewal mode and period stay as they are.
+        var renew = info.Renew ?? new OvhRenew(Automatic: true, DeleteAtExpiration: false, Forced: false, ManualPayment: null, Period: null);
+        await api.PutAsync(path, new OvhUpdateServiceInfos(new OvhUpdateRenew(renew.Automatic, endAtExpiry, renew.Forced, renew.Period)), ct);
+    }
+
+    /// <summary>A domain with its dates and renewal price; details OVHcloud does not return stay empty.</summary>
+    private async Task<RegisteredDomain> DescribeAsync(string name, CancellationToken ct)
+    {
+        OvhServiceInfos? info;
+        try
+        {
+            info = await api.GetAsync<OvhServiceInfos>($"domain/{Escape(name)}/serviceInfos", ct);
+        }
+        catch (ProviderException ex)
+        {
+            return new RegisteredDomain(name, Note: $"OVHcloud returned no details: {ex.Message}");
+        }
+
+        if (info is null)
+            return new RegisteredDomain(name, Note: "OVHcloud returned no details.");
+
+        var renewal = info.Renew switch
+        {
+            null => DomainRenewal.Unknown,
+            { DeleteAtExpiration: true } => DomainRenewal.EndsAtExpiry,
+            { Automatic: true, ManualPayment: not true } => DomainRenewal.Automatic,
+            _ => DomainRenewal.Manual,
+        };
+        var domain = new RegisteredDomain(
+            name,
+            info.Creation,
+            info.Expiration,
+            renewal,
+            CanEndAtExpiry: info.CanDeleteAtExpiration ?? true);
+
+        // The price is a detail: without it the domain is still listed. The service's own billing price is the one
+        // paid for the current term (often a first-year promotion), so the price comes from the renewal offers.
+        try
+        {
+            var offers = await api.GetAllAsync<OvhRenewDescription>(
+                $"service/{info.ServiceId.ToString(CultureInfo.InvariantCulture)}/renew?includeOptions=false", ct);
+            var currentMonths = info.Renew?.Period is > 0 and var period ? (int)period : 12;
+            var offer = offers.FirstOrDefault(o => Months(o.RenewPeriod) == currentMonths)
+                        ?? offers.FirstOrDefault(o => Months(o.RenewPeriod) is not null);
+            var strategy = offer?.Strategies?.FirstOrDefault(s => s.Services is null || s.Services.Contains(info.ServiceId));
+            if (strategy?.Price is { } price)
+            {
+                return domain with
+                {
+                    RenewalPrice = price.Value,
+                    Currency = price.CurrencyCode ?? "",
+                    RenewalMonths = Months(offer!.RenewPeriod),
+                };
+            }
+        }
+        catch (ProviderException)
+        {
+        }
+
+        return domain;
+    }
+
+    /// <summary>"P1Y" → 12, "P6M" → 6, anything else → null.</summary>
+    internal static int? Months(string? duration)
+    {
+        if (duration is not { Length: > 2 } || duration[0] != 'P')
+            return null;
+        var unit = duration[^1];
+        if (!int.TryParse(duration.AsSpan(1, duration.Length - 2), NumberStyles.None, CultureInfo.InvariantCulture, out var count) || count <= 0)
+            return null;
+        return unit switch { 'Y' => count * 12, 'M' => count, _ => null };
+    }
 
     private async Task<DomainAvailability> CheckOneAsync(string cartId, string domain, CancellationToken ct)
     {

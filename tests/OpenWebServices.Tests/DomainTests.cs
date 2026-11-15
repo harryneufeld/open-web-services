@@ -161,6 +161,85 @@ public class DomainTests
         Assert.Contains("CLAIMS_NOTICE", error.Message);
     }
 
+    [Fact]
+    public async Task Cancelling_needs_the_admin_role_and_is_audited()
+    {
+        var (connection, factory, groups) = Setup();
+        var groupId = groups.Items[0].Id;
+        var audit = new FakeAuditLog();
+
+        await Assert.ThrowsAsync<ForbiddenException>(() =>
+            new ChangeDomainCancellation(TestData.Access(TenantRole.Member), groups, factory, audit, new FakeUnitOfWork())
+                .ExecuteAsync(groupId, "mine.com", true, CancellationToken.None));
+
+        var change = new ChangeDomainCancellation(TestData.Access(TenantRole.Admin), groups, factory, audit, new FakeUnitOfWork());
+        await change.ExecuteAsync(groupId, " Mine.com ", true, CancellationToken.None);
+        await change.ExecuteAsync(groupId, "mine.com", false, CancellationToken.None);
+
+        Assert.Equal([("mine.com", true), ("mine.com", false)], connection.Registrar!.Cancellations);
+        Assert.Contains(audit.Entries, e => e.Type == AuditTypes.DomainCancelled && e.Detail.Contains("mine.com"));
+        Assert.Contains(audit.Entries, e => e.Type == AuditTypes.DomainCancellationWithdrawn);
+    }
+
+    [Fact]
+    public async Task Ovh_lists_domains_with_dates_renewal_and_price()
+    {
+        var handler = new OvhHandler();
+        handler.Responses["GET domain"] = """["auto.com","ending.de","broken.net"]""";
+        handler.Responses["GET domain/auto.com/serviceInfos"] = """
+            {"serviceId":11,"creation":"2021-03-04","expiration":"2027-03-04","canDeleteAtExpiration":true,
+             "renew":{"automatic":true,"deleteAtExpiration":false,"forced":false,"manualPayment":false,"period":12}}
+            """;
+        handler.Responses["GET service/11/renew?includeOptions=false"] = """
+            [{"renewPeriod":"P2Y","strategies":[{"price":{"value":25.98,"currencyCode":"EUR"},"services":[11]}]},
+             {"renewPeriod":"P1Y","strategies":[{"price":{"value":12.99,"currencyCode":"EUR","text":"12.99 €"},"services":[11]}]}]
+            """;
+        handler.Responses["GET domain/ending.de/serviceInfos"] = """
+            {"serviceId":12,"creation":"2024-01-01","expiration":"2026-12-01","canDeleteAtExpiration":true,
+             "renew":{"automatic":true,"deleteAtExpiration":true,"forced":false,"period":12}}
+            """;
+
+        var domains = await NewRegistrar(handler).ListDomainsAsync(CancellationToken.None);
+
+        var auto = domains[0];
+        Assert.Equal(new DateOnly(2021, 3, 4), auto.RegisteredOn);
+        Assert.Equal(new DateOnly(2027, 3, 4), auto.ExpiresOn);
+        Assert.Equal(DomainRenewal.Automatic, auto.Renewal);
+        Assert.Equal(12.99m, auto.YearlyPrice);
+        Assert.Equal("EUR", auto.Currency);
+        Assert.Equal(DomainRenewal.EndsAtExpiry, domains[1].Renewal);
+        Assert.Null(domains[1].RenewalPrice);
+        Assert.Equal("broken.net", domains[2].Name);
+        Assert.NotNull(domains[2].Note);
+    }
+
+    [Fact]
+    public async Task Ovh_cancellation_only_changes_the_deletion_flag()
+    {
+        var handler = new OvhHandler();
+        handler.Responses["GET domain/mine.com/serviceInfos"] = """
+            {"serviceId":11,"canDeleteAtExpiration":true,"renew":{"automatic":false,"deleteAtExpiration":false,"forced":false,"period":24}}
+            """;
+        handler.Responses["PUT domain/mine.com/serviceInfos"] = "null";
+
+        await NewRegistrar(handler).SetEndAtExpiryAsync("mine.com", true, CancellationToken.None);
+
+        Assert.Contains("PUT domain/mine.com/serviceInfos", handler.Requested);
+        Assert.Contains("""{"renew":{"automatic":false,"deleteAtExpiration":true,"forced":false,"period":24}}""", handler.Bodies);
+
+        handler.Responses["GET domain/mine.com/serviceInfos"] = """{"serviceId":11,"canDeleteAtExpiration":false}""";
+        await Assert.ThrowsAsync<ProviderException>(() => NewRegistrar(handler).SetEndAtExpiryAsync("mine.com", true, CancellationToken.None));
+    }
+
+    [Theory]
+    [InlineData("P1Y", 12)]
+    [InlineData("P6M", 6)]
+    [InlineData("P2Y", 24)]
+    [InlineData("P1D", null)]
+    [InlineData(null, null)]
+    public void Ovh_renewal_durations_are_read_as_months(string? duration, int? months) =>
+        Assert.Equal(months, OvhDomainRegistrar.Months(duration));
+
     private static (FakeConnection Connection, FakeConnectionFactory Factory, InMemoryGroupRepository Groups) Setup()
     {
         var connection = new FakeConnection();

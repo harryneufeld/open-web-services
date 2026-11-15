@@ -113,6 +113,9 @@ read-only; ows does not overwrite it.
 | Method | Route                     | Used for                                            |
 | ------ | ------------------------- | --------------------------------------------------- |
 | GET    | `/domain`                 | Listing registered domains                          |
+| GET    | `/domain/*`               | Registration and expiry dates, renewal mode (`/domain/{domain}/serviceInfos`) |
+| PUT    | `/domain/*`               | Cancelling a domain at expiry and undoing it (`/domain/{domain}/serviceInfos`) |
+| GET    | `/service/*`              | Renewal price (`/service/{id}/renew`)               |
 | POST   | `/order/cart`             | Creating a cart for a search or an order            |
 | POST   | `/order/cart/*`           | Assigning the cart, adding the domain, configuring it, placing the order |
 | GET    | `/order/cart/*`           | Availability, prices, required configuration, order preview |
@@ -120,6 +123,9 @@ read-only; ows does not overwrite it.
 
 Placing an order creates an OVHcloud order on the account. Unless "Pay now" is ticked it waits for payment in the
 OVHcloud Control Panel.
+
+Cancelling a domain sets OVHcloud's "delete at expiration" flag: the domain keeps working until the end of its paid
+term and is then released. Nothing is refunded, and undoing the cancellation before expiry clears the flag again.
 
 OVHcloud answers `400 ... check failed` when the same name has been checked several times within minutes. The limit
 is per name and temporary: other names keep working, and the name can be checked again after a while. Such names are
@@ -161,6 +167,9 @@ Use these access rules in step 2 instead of the wildcards:
   {"method":"PUT","path":"/domain/zone/*"},
   {"method":"DELETE","path":"/domain/zone/*"},
   {"method":"GET","path":"/domain"},
+  {"method":"GET","path":"/domain/*"},
+  {"method":"PUT","path":"/domain/*"},
+  {"method":"GET","path":"/service/*"},
   {"method":"POST","path":"/order/cart"},
   {"method":"POST","path":"/order/cart/*"},
   {"method":"GET","path":"/order/cart/*"},

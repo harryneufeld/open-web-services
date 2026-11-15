@@ -103,4 +103,6 @@ public static class AuditTypes
     public const string ProviderCredentialsChanged = "provider-credentials-changed";
     public const string ProviderGroupRemoved = "provider-group-removed";
     public const string DomainOrdered = "domain-ordered";
+    public const string DomainCancelled = "domain-cancelled";
+    public const string DomainCancellationWithdrawn = "domain-cancellation-withdrawn";
 }

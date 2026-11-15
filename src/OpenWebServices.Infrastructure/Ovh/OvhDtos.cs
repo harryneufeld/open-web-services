@@ -97,6 +97,29 @@ internal sealed record OvhContract(string Name, string Url);
 
 internal sealed record OvhOrder(long? OrderId, string? Url, OvhOrderPrices? Prices, List<OvhOrderDetail>? Details, List<OvhContract>? Contracts);
 
+// Registered domains: dates and renewal under /domain/{name}/serviceInfos, renewal offers under /service/{id}/renew.
+
+/// <param name="Period">Renewal period in months.</param>
+internal sealed record OvhRenew(bool Automatic, bool DeleteAtExpiration, bool Forced, bool? ManualPayment, long? Period);
+
+internal sealed record OvhServiceInfos(
+    long ServiceId,
+    DateOnly? Creation,
+    DateOnly? Expiration,
+    OvhRenew? Renew,
+    bool? CanDeleteAtExpiration,
+    string? Status);
+
+internal sealed record OvhUpdateRenew(bool Automatic, bool DeleteAtExpiration, bool Forced, long? Period);
+
+internal sealed record OvhUpdateServiceInfos(OvhUpdateRenew Renew);
+
+/// <param name="RenewPeriod">ISO 8601 duration one renewal adds, e.g. "P1Y".</param>
+internal sealed record OvhRenewDescription(string? RenewPeriod, List<OvhRenewStrategy>? Strategies);
+
+/// <param name="Price">Net price of the renewal.</param>
+internal sealed record OvhRenewStrategy(OvhPrice? Price, List<long>? Services);
+
 // Networking: reverse DNS lives under /ip, private networks (vRack) under the project.
 
 internal sealed record OvhReverseIp(string IpReverse, string Reverse);
