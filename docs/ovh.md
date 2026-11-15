@@ -61,6 +61,27 @@ routes listed below instead; when a later ows version calls a new route, such a 
 | POST   | `/cloud/project/{serviceName}/sshkey`                   | Registering the server's SSH key        |
 | DELETE | `/cloud/project/{serviceName}/sshkey/*`                 | Removing it when the server is deleted  |
 
+## Server networking
+
+| Method | Route                                                        | Used for                                   |
+| ------ | ------------------------------------------------------------ | ------------------------------------------ |
+| GET    | `/ip/*`                                                      | Reading reverse DNS of instance addresses  |
+| POST   | `/ip/*`                                                      | Setting reverse DNS                        |
+| DELETE | `/ip/*`                                                      | Removing reverse DNS                       |
+| GET    | `/cloud/project/{serviceName}/network/private`               | Listing private networks                   |
+| POST   | `/cloud/project/{serviceName}/network/private`               | Creating a private network                 |
+| GET    | `/cloud/project/{serviceName}/network/private/*`             | Network status and subnets                 |
+| POST   | `/cloud/project/{serviceName}/network/private/*`             | Activating a region, adding a subnet       |
+| GET    | `/cloud/project/{serviceName}/instance/*`                    | Addresses and network interfaces           |
+| POST   | `/cloud/project/{serviceName}/instance/*`                    | Joining a network (new interface)          |
+| DELETE | `/cloud/project/{serviceName}/instance/*`                    | Leaving a network (removing the interface) |
+
+Private networks need a vRack attached to the Public Cloud project; without one OVHcloud refuses to create them. ows
+activates a network in the server's region when needed and gives each region its own /24 pool of the network's range.
+Reverse DNS names must resolve to the address (an A or AAAA record) before OVHcloud accepts them.
+
+OVHcloud's API v1 has no security groups for Public Cloud instances, so ows does not manage OVHcloud firewalls yet.
+
 ## DNS
 
 | Method | Route                          | Used for                          |
@@ -83,8 +104,7 @@ routes listed below instead; when a later ows version calls a new route, such a 
 | DELETE | `/order/cart/*`           | Removing search carts                               |
 
 Placing an order creates an OVHcloud order on the account. Unless "Pay now" is ticked it waits for payment in the
-OVHcloud Control Panel. Server networking for OVHcloud is read from the instance (`GET .../instance/*`); reverse DNS,
-private networks and security groups are not managed by ows yet.
+OVHcloud Control Panel.
 
 `GET /domain/zone/*` also covers `/domain/zone/{zone}/record` and `/domain/zone/{zone}/record/{id}`.
 
@@ -109,6 +129,13 @@ Use these access rules in step 2 instead of the wildcards:
   {"method":"DELETE","path":"/cloud/project/<project id>/instance/*"},
   {"method":"POST","path":"/cloud/project/<project id>/sshkey"},
   {"method":"DELETE","path":"/cloud/project/<project id>/sshkey/*"},
+  {"method":"GET","path":"/cloud/project/<project id>/network/private"},
+  {"method":"POST","path":"/cloud/project/<project id>/network/private"},
+  {"method":"GET","path":"/cloud/project/<project id>/network/private/*"},
+  {"method":"POST","path":"/cloud/project/<project id>/network/private/*"},
+  {"method":"GET","path":"/ip/*"},
+  {"method":"POST","path":"/ip/*"},
+  {"method":"DELETE","path":"/ip/*"},
   {"method":"GET","path":"/domain/zone"},
   {"method":"GET","path":"/domain/zone/*"},
   {"method":"POST","path":"/domain/zone/*"},

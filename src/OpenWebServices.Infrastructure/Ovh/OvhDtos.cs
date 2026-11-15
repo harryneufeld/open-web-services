@@ -96,3 +96,29 @@ internal sealed record OvhOrderDetail(string? Description, string? Domain, OvhPr
 internal sealed record OvhContract(string Name, string Url);
 
 internal sealed record OvhOrder(long? OrderId, string? Url, OvhOrderPrices? Prices, List<OvhOrderDetail>? Details, List<OvhContract>? Contracts);
+
+// Networking: reverse DNS lives under /ip, private networks (vRack) under the project.
+
+internal sealed record OvhReverseIp(string IpReverse, string Reverse);
+
+internal sealed record OvhSetReverse(string IpReverse, string Reverse);
+
+internal sealed record OvhNetworkRegion(string Region, string? Status, string? OpenstackId);
+
+internal sealed record OvhPrivateNetwork(string Id, string Name, string? Status, string? Type, long? VlanId, List<OvhNetworkRegion>? Regions);
+
+internal sealed record OvhCreatePrivateNetwork(string Name, List<string> Regions);
+
+internal sealed record OvhAddNetworkRegion(string Region);
+
+internal sealed record OvhIpPool(string? Network, string? Region, string? Start, string? End);
+
+internal sealed record OvhSubnet(string Id, string? Cidr, List<OvhIpPool>? IpPools);
+
+internal sealed record OvhCreateSubnet(string Network, string Region, string Start, string End, bool Dhcp, bool NoGateway);
+
+internal sealed record OvhInterfaceFixedIp(string Ip, string? SubnetId);
+
+internal sealed record OvhInterface(string Id, string NetworkId, string? Type, List<OvhInterfaceFixedIp>? FixedIps);
+
+internal sealed record OvhCreateInterface(string NetworkId);

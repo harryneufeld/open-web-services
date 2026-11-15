@@ -1,7 +1,10 @@
 namespace OpenWebServices.Application.Abstractions;
 
 /// <summary>The network setup of one server as the provider reports it.</summary>
-/// <param name="PublicIpv6">The server's IPv6 address or prefix, e.g. "2001:db8::/64".</param>
+/// <param name="PublicIpv6">
+/// The server's IPv6 address or network, e.g. "2001:db8::/64". With a network, each address in it can get its own
+/// reverse DNS entry.
+/// </param>
 /// <param name="CanEditReverseDns">The provider lets ows change reverse DNS of the public addresses.</param>
 /// <param name="CanManagePrivateNetworks">The provider lets ows create private networks and attach servers.</param>
 public sealed record ServerNetworking(
@@ -16,7 +19,10 @@ public sealed record ServerNetworking(
 public sealed record PrivateNetworkAttachment(string NetworkId, string NetworkName, string Ip);
 
 /// <param name="Ptr">The host name the address resolves back to, or null when none is set.</param>
-public sealed record ReverseDnsEntry(string Ip, string? Ptr);
+/// <param name="IsRemovable">
+/// The entry can be deleted, e.g. an extra IPv6 address; the server's own IPv4 can only be changed or reset.
+/// </param>
+public sealed record ReverseDnsEntry(string Ip, string? Ptr, bool IsRemovable = false);
 
 /// <param name="ServerIds">External ids of the servers attached to the network.</param>
 public sealed record PrivateNetwork(string ExternalId, string Name, string IpRange, IReadOnlyList<string> ServerIds);
@@ -32,7 +38,8 @@ public interface IServerNetworkProvider
     Task<IReadOnlyList<PrivateNetwork>> ListPrivateNetworksAsync(CancellationToken ct);
 
     /// <param name="ipRange">An RFC 1918 IPv4 range in CIDR notation, e.g. 10.0.0.0/16.</param>
-    Task<PrivateNetwork> CreatePrivateNetworkAsync(string name, string ipRange, CancellationToken ct);
+    /// <param name="forServerId">The server that joins next; providers with regional networks create it there.</param>
+    Task<PrivateNetwork> CreatePrivateNetworkAsync(string name, string ipRange, string forServerId, CancellationToken ct);
 
     /// <summary>Attaches the server, adding a subnet in the server's network zone first when the network has none.</summary>
     Task AttachToPrivateNetworkAsync(string externalServerId, string networkId, CancellationToken ct);

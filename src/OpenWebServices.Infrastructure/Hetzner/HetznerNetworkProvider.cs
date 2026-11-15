@@ -22,7 +22,7 @@ internal sealed class HetznerNetworkProvider(HetznerApiClient api) : IServerNetw
         var reverse = new List<ReverseDnsEntry>();
         if (ipv4 is not null)
             reverse.Add(new ReverseDnsEntry(ipv4.Ip, ipv4.DnsPtr));
-        reverse.AddRange((ipv6?.DnsPtr ?? []).Select(p => new ReverseDnsEntry(p.Ip, p.DnsPtr)));
+        reverse.AddRange((ipv6?.DnsPtr ?? []).Select(p => new ReverseDnsEntry(p.Ip, p.DnsPtr, IsRemovable: true)));
 
         return new ServerNetworking(
             ipv4?.Ip,
@@ -44,7 +44,7 @@ internal sealed class HetznerNetworkProvider(HetznerApiClient api) : IServerNetw
     public async Task<IReadOnlyList<PrivateNetwork>> ListPrivateNetworksAsync(CancellationToken ct) =>
         [.. (await api.GetAllAsync<HetznerNetwork>("networks", "networks", ct)).Select(ToNetwork)];
 
-    public async Task<PrivateNetwork> CreatePrivateNetworkAsync(string name, string ipRange, CancellationToken ct)
+    public async Task<PrivateNetwork> CreatePrivateNetworkAsync(string name, string ipRange, string forServerId, CancellationToken ct)
     {
         var created = await api.PostAsync<HetznerNetworkEnvelope>(
             "networks", new HetznerCreateNetworkBody(name, ipRange, new() { ["managed-by"] = "ows" }), ct);

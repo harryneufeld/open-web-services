@@ -64,7 +64,7 @@ public sealed partial class ServerNetworks(
         var range = NormalizePrivateRange(ipRange);
 
         var (server, networks) = await ConnectAsync(serverId, ct);
-        var network = await networks.CreatePrivateNetworkAsync(trimmed, range, ct);
+        var network = await networks.CreatePrivateNetworkAsync(trimmed, range, server.ExternalId!, ct);
         await networks.AttachToPrivateNetworkAsync(server.ExternalId!, network.ExternalId, ct);
         syncScheduler.RequestSync(server.GroupId);
     }

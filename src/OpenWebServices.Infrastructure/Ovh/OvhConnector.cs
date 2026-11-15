@@ -77,7 +77,7 @@ internal sealed class OvhConnector(IHttpClientFactory httpClients, ILogger<OvhAp
         public IDnsProvider Dns { get; } = new OvhDnsProvider(api);
         public IServerNetworkProvider Networks { get; } = new OvhNetworkProvider(api, projectId);
 
-        // Public Cloud security groups are not part of the routes ows uses yet.
+        // API v1 has no security groups for Public Cloud instances (see docs/ovh.md).
         public IFirewallProvider? Firewalls => null;
         public IDomainRegistrar Domains { get; } = new OvhDomainRegistrar(api, subsidiary);
 
