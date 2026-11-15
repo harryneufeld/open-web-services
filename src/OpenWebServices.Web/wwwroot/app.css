@@ -608,3 +608,22 @@ td .actions { justify-content: flex-end; }
 .toolbar-note { margin: 0; padding: 10px 16px; border-bottom: 1px solid var(--border); font-size: 0.8125rem; color: var(--text-2); background: var(--surface-2); }
 .rule-editor td { vertical-align: middle; }
 .rule-editor select, .rule-editor input { width: 100%; min-width: 80px; }
+
+/* Read-only fields inside forms, e.g. the address next to its reverse DNS name. */
+.field input[readonly] { background: var(--surface-2); color: var(--text-2); }
+
+/* DNS record sets edited in place: above the list when adding, instead of the row when editing. */
+.record-form { display: flex; flex-direction: column; gap: 10px; }
+.record-form.new { padding: 16px; border-bottom: 1px solid var(--border); background: var(--surface-2); }
+tr.editing > td { padding: 14px 16px; background: var(--surface-2); white-space: normal; }
+.record-form .record-name { flex: 0 1 180px; }
+.record-form .record-type { flex: 0 0 110px; }
+.record-form .record-ttl { flex: 0 1 140px; }
+.record-form .record-values { flex: 1 1 320px; }
+.record-form textarea { resize: vertical; min-height: 34px; }
+.record-form-footer { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+.record-form-footer .hint { margin-right: auto; flex: 1 1 280px; }
+@media (max-width: 860px) {
+    table.stack tr.editing > td { display: block; padding: 12px 0; }
+    table.stack tr.editing > td::before { display: none; }
+}
