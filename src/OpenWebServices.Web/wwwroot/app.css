@@ -599,15 +599,10 @@ a.service:hover { text-decoration: none; border-color: var(--border-strong); box
 td .actions { justify-content: flex-end; }
 
 /* Sub-sections inside a panel body, e.g. reverse DNS and private networks of a server. */
-.subsection { display: flex; flex-direction: column; gap: 10px; }
-.subsection h3 { margin: 0; font-size: 0.875rem; font-weight: 600; display: flex; align-items: center; gap: 8px; }
 .inline-form { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; }
 .inline-form .field { flex: 1 1 200px; }
-.list.bordered { border: 1px solid var(--border); border-radius: var(--radius); }
 .list .grow .subtle { margin-top: 2px; }
 .toolbar-note { margin: 0; padding: 10px 16px; border-bottom: 1px solid var(--border); font-size: 0.8125rem; color: var(--text-2); background: var(--surface-2); }
-.rule-editor td { vertical-align: middle; }
-.rule-editor select, .rule-editor input { width: 100%; min-width: 80px; }
 
 /* Read-only fields inside forms, e.g. the address next to its reverse DNS name. */
 .field input[readonly] { background: var(--surface-2); color: var(--text-2); cursor: default; }
@@ -628,14 +623,27 @@ tr.editing > td { padding: 14px 16px; background: var(--surface-2); white-space:
     table.stack tr.editing > td::before { display: none; }
 }
 
-/* A titled group of related form rows, e.g. reverse DNS entries; the add row sits inset below them. */
-.field-group { display: flex; flex-direction: column; gap: 12px; padding: 14px 16px 16px; border: 1px solid var(--border); border-radius: var(--radius-lg); }
-.field-group h3 { margin: 0; font-size: 0.875rem; font-weight: 600; }
-.field-group-add { display: flex; flex-direction: column; gap: 8px; margin: 6px 0 0 16px; padding: 12px 14px; border: 1px dashed var(--border); border-radius: var(--radius); background: var(--surface-2); }
-.field-group-add h4 { margin: 0; font-size: 0.8125rem; font-weight: 600; color: var(--text-2); }
-.row-actions { display: flex; gap: 8px; align-items: center; min-width: 150px; min-height: 34px; }
+/* Sections inside a panel: heading + whitespace, a hairline between sections. No nested boxes (docs/design.md). */
+.panel-section { display: flex; flex-direction: column; gap: 10px; }
+.panel-section + .panel-section { padding-top: 16px; border-top: 1px solid var(--border); }
+.panel-section h3 { margin: 0; font-size: 0.875rem; font-weight: 600; }
 .field-error { margin: 0; font-size: 0.8125rem; color: var(--danger); }
+
+/* Edit grid: editable rows with column headers once; read and edit look the same (docs/design.md). */
+.edit-grid { display: grid; gap: 8px 12px; align-items: center; }
+.edit-grid > .row { display: contents; }
+.edit-grid > .head > span { font-size: 0.75rem; font-weight: 550; color: var(--text-3); }
+.edit-grid input, .edit-grid select { width: 100%; min-width: 0; }
+.edit-grid .cell-text { overflow-wrap: anywhere; }
+.edit-grid .row-actions { display: flex; gap: 6px; justify-content: flex-end; align-items: center; min-height: 34px; }
+.edit-grid > .divider { grid-column: 1 / -1; height: 1px; background: var(--border); margin: 2px 0; }
+.edit-grid.two { grid-template-columns: minmax(180px, 1fr) minmax(200px, 1.4fr) 150px; }
+.edit-grid.rules { grid-template-columns: 110px 150px minmax(200px, 1.6fr) minmax(140px, 1fr) 40px; }
 @media (max-width: 860px) {
-    .field-group-add { margin-left: 0; }
-    .row-actions { min-width: 0; min-height: 0; }
+    .edit-grid, .edit-grid.two, .edit-grid.rules { grid-template-columns: 1fr; gap: 0; }
+    .edit-grid > .head { display: none; }
+    .edit-grid > .row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 12px 0; border-bottom: 1px solid var(--border); }
+    .edit-grid > .row > [data-label]::before { content: attr(data-label); display: block; font-size: 0.75rem; font-weight: 550; color: var(--text-3); margin-bottom: 4px; }
+    .edit-grid > .row > .wide, .edit-grid > .row > .row-actions { grid-column: 1 / -1; }
+    .edit-grid > .divider { display: none; }
 }

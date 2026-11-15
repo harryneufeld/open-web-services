@@ -39,80 +39,92 @@
                 <div><dt>Public IPv6</dt><dd class="mono">@(net.PublicIpv6 ?? "–")</dd></div>
             </dl>
 
-            <div class="field-group">
-                <h3>Reverse DNS</h3>
+            <section class="panel-section" aria-labelledby="rdns">
+                <h3 id="rdns">Reverse DNS</h3>
                 @if (!net.CanEditReverseDns && net.ReverseDns.Count == 0)
                 {
                     <p class="hint">This provider's reverse DNS is not managed in ows. Change it in the provider's console.</p>
                 }
-                @foreach (var entry in net.ReverseDns)
+                else
                 {
-                    <div class="inline-form">
-                        <label class="field"><span>Address</span><input class="mono" value="@entry.Ip" readonly tabindex="-1" /></label>
-                        <label class="field"><span>Host name</span>
-                            <input class="mono" value="@Draft(entry)" @oninput="e => _ptrDrafts[entry.Ip] = e.Value?.ToString() ?? string.Empty"
-                                   placeholder="Provider default" spellcheck="false" readonly="@(!net.CanEditReverseDns)" />
-                        </label>
-                        @if (net.CanEditReverseDns)
+                    <div class="edit-grid two">
+                        <div class="row head"><span>Address</span><span>Host name</span><span></span></div>
+                        @foreach (var entry in net.ReverseDns)
                         {
-                            <div class="row-actions">
-                                @if (IsChanged(entry))
-                                {
-                                    <button class="btn btn-ghost" disabled="@_busy" @onclick="() => _ptrDrafts.Remove(entry.Ip)">Undo</button>
-                                    <button class="btn btn-primary" disabled="@_busy" @onclick="() => SavePtrAsync(entry)">Save</button>
-                                }
+                            <div class="row">
+                                <div data-label="Address" class="mono cell-text">@entry.Ip</div>
+                                <div data-label="Host name">
+                                    @if (net.CanEditReverseDns)
+                                    {
+                                        <input class="mono" value="@Draft(entry)" @oninput="e => _ptrDrafts[entry.Ip] = e.Value?.ToString() ?? string.Empty"
+                                               placeholder="Provider default" spellcheck="false" aria-label="Host name for @entry.Ip" />
+                                    }
+                                    else
+                                    {
+                                        <span class="mono cell-text">@(entry.Ptr ?? "–")</span>
+                                    }
+                                </div>
+                                <div class="row-actions">
+                                    @if (IsChanged(entry))
+                                    {
+                                        <button class="btn btn-sm btn-ghost" disabled="@_busy" @onclick="() => _ptrDrafts.Remove(entry.Ip)">Undo</button>
+                                        <button class="btn btn-sm btn-primary" disabled="@_busy" @onclick="() => SavePtrAsync(entry)">Save</button>
+                                    }
+                                </div>
+                            </div>
+                        }
+                        @if (net.CanEditReverseDns && net.PublicIpv6 is not null)
+                        {
+                            <div class="row add">
+                                <div data-label="IPv6 address"><input class="mono" @bind="_newPtrIp" @bind:event="oninput" spellcheck="false" aria-label="IPv6 address to add" /></div>
+                                <div data-label="Host name"><input class="mono" @bind="_newPtrValue" @bind:event="oninput" placeholder="mail.example.com" spellcheck="false" aria-label="Host name for the new address" /></div>
+                                <div class="row-actions"><button class="btn btn-sm" disabled="@_busy" @onclick="AddPtrAsync"><Icon Name="plus" />Add IPv6 address</button></div>
                             </div>
                         }
                     </div>
+                    @if (_addPtrHint is not null)
+                    {
+                        <p class="field-error" role="alert">@_addPtrHint</p>
+                    }
+                    @if (net.CanEditReverseDns && net.PublicIpv6 is not null)
+                    {
+                        <p class="hint">The last row names another address in @net.PublicIpv6. Clear a host name and save to reset it to the provider default.</p>
+                    }
                 }
-                @if (net.CanEditReverseDns && net.PublicIpv6 is not null)
-                {
-                    <div class="field-group-add">
-                        <h4>Add an IPv6 address</h4>
-                        <div class="inline-form">
-                            <label class="field"><span>IPv6 address</span><input class="mono" @bind="_newPtrIp" @bind:event="oninput" spellcheck="false" /></label>
-                            <label class="field"><span>Host name</span><input class="mono" @bind="_newPtrValue" @bind:event="oninput" placeholder="mail.example.com" spellcheck="false" /></label>
-                            <div class="row-actions">
-                                <button class="btn" disabled="@_busy" @onclick="AddPtrAsync"><Icon Name="plus" />Add</button>
-                            </div>
-                        </div>
-                        @if (_addPtrHint is not null)
-                        {
-                            <p class="field-error">@_addPtrHint</p>
-                        }
-                        <p class="hint">Every address in the server's IPv6 network (@net.PublicIpv6) can have its own host name. To reset a host name, clear it above and save.</p>
-                    </div>
-                }
-            </div>
+            </section>
 
-            <div class="subsection">
-                <h3>Private networks</h3>
+            <section class="panel-section" aria-labelledby="private-networks">
+                <h3 id="private-networks">Private networks</h3>
                 @if (net.PrivateNetworks.Count == 0)
                 {
                     <p class="hint">Not attached to a private network.</p>
                 }
                 else
                 {
-                    <ul class="list bordered">
+                    <div class="edit-grid two">
+                        <div class="row head"><span>Network</span><span>Private address</span><span></span></div>
                         @foreach (var attachment in net.PrivateNetworks)
                         {
-                            <li>
-                                <span class="grow"><strong>@attachment.NetworkName</strong><span class="mono subtle">@attachment.Ip</span></span>
-                                @if (net.CanManagePrivateNetworks)
-                                {
-                                    @if (_confirmDetach == attachment.NetworkId)
+                            <div class="row">
+                                <div data-label="Network" class="cell-text">@attachment.NetworkName</div>
+                                <div data-label="Private address" class="mono cell-text">@attachment.Ip</div>
+                                <div class="row-actions">
+                                    @if (net.CanManagePrivateNetworks)
                                     {
-                                        <button class="btn btn-sm" @onclick="() => _confirmDetach = null">Cancel</button>
-                                        <button class="btn btn-sm btn-danger-solid" disabled="@_busy" @onclick="() => DetachAsync(attachment.NetworkId)">Detach</button>
+                                        @if (_confirmDetach == attachment.NetworkId)
+                                        {
+                                            <button class="btn btn-sm" @onclick="() => _confirmDetach = null">Cancel</button>
+                                            <button class="btn btn-sm btn-danger-solid" disabled="@_busy" @onclick="() => DetachAsync(attachment.NetworkId)">Detach</button>
+                                        }
+                                        else
+                                        {
+                                            <button class="btn btn-sm btn-ghost" disabled="@_busy" @onclick="() => _confirmDetach = attachment.NetworkId">Detach…</button>
+                                        }
                                     }
-                                    else
-                                    {
-                                        <button class="btn btn-sm" disabled="@_busy" @onclick="() => _confirmDetach = attachment.NetworkId">Detach…</button>
-                                    }
-                                }
-                            </li>
+                                </div>
+                            </div>
                         }
-                    </ul>
+                    </div>
                 }
                 @if (net.CanManagePrivateNetworks)
                 {
@@ -129,21 +141,25 @@
                                     }
                                 </select>
                             </label>
-                            <button class="btn" disabled="@(_busy || string.IsNullOrEmpty(_joinNetworkId))" @onclick="JoinAsync">Join</button>
+                            <button class="btn" disabled="@_busy" @onclick="JoinAsync">Join</button>
                         </div>
                     }
                     <div class="inline-form">
-                        <label class="field"><span>New network name</span><input @bind="_newNetworkName" @bind:event="oninput" placeholder="backend" maxlength="@ServerNetworks.MaxNetworkNameLength" /></label>
-                        <label class="field"><span>IP range</span><input class="mono" @bind="_newNetworkRange" placeholder="10.0.0.0/16" spellcheck="false" /></label>
-                        <button class="btn" disabled="@(_busy || string.IsNullOrWhiteSpace(_newNetworkName))" @onclick="CreateNetworkAsync"><Icon Name="plus" />Create and join</button>
+                        <label class="field"><span>New network</span><input @bind="_newNetworkName" @bind:event="oninput" placeholder="backend" maxlength="@ServerNetworks.MaxNetworkNameLength" /></label>
+                        <label class="field"><span>IP range</span><input class="mono" @bind="_newNetworkRange" @bind:event="oninput" spellcheck="false" /></label>
+                        <button class="btn" disabled="@_busy" @onclick="CreateNetworkAsync"><Icon Name="plus" />Create and join</button>
                     </div>
-                    <p class="hint">Servers in the same private network talk to each other without going over the internet. A subnet for the server's network zone is added when needed.</p>
+                    @if (_networkHint is not null)
+                    {
+                        <p class="field-error" role="alert">@_networkHint</p>
+                    }
+                    <p class="hint">Servers in the same private network reach each other without going over the internet. A subnet for the server's network zone is added when needed.</p>
                 }
                 else
                 {
                     <p class="hint">Private networks of this provider are managed in its own console for now.</p>
                 }
-            </div>
+            </section>
         </div>
     }
 </section>
@@ -156,6 +172,7 @@
     private readonly Dictionary<string, string> _ptrDrafts = [];
     private string _newPtrIp = "";
     private string? _addPtrHint;
+    private string? _networkHint;
     private string _newPtrValue = "";
     private string? _confirmDetach;
     private string _joinNetworkId = "";
@@ -215,7 +232,13 @@
         });
     }
 
-    private Task JoinAsync() => RunAsync(async () =>
+    private Task JoinAsync()
+    {
+        _networkHint = string.IsNullOrEmpty(_joinNetworkId) ? "Choose the network to join." : null;
+        return _networkHint is not null ? Task.CompletedTask : JoinCoreAsync();
+    }
+
+    private Task JoinCoreAsync() => RunAsync(async () =>
     {
         await Runner.RunAsync<ServerNetworks>(u => u.AttachAsync(ServerId, _joinNetworkId, CancellationToken.None));
         _joinNetworkId = "";
@@ -227,7 +250,13 @@
         _confirmDetach = null;
     });
 
-    private Task CreateNetworkAsync() => RunAsync(async () =>
+    private Task CreateNetworkAsync()
+    {
+        _networkHint = string.IsNullOrWhiteSpace(_newNetworkName) ? "Enter a name for the new network." : null;
+        return _networkHint is not null ? Task.CompletedTask : CreateNetworkCoreAsync();
+    }
+
+    private Task CreateNetworkCoreAsync() => RunAsync(async () =>
     {
         await Runner.RunAsync<ServerNetworks>(u => u.CreateNetworkAsync(ServerId, _newNetworkName, _newNetworkRange, CancellationToken.None));
         _newNetworkName = "";

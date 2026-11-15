@@ -1,4 +1,5 @@
-@* The inbound firewall ows manages for one server, plus read-only firewalls set up elsewhere. *@
+@* The inbound firewall ows manages for one server, always shown as its editable rules (docs/design.md),
+   plus read-only firewalls set up elsewhere. *@
 @inject UseCaseRunner Runner
 
 <section class="panel" aria-labelledby="firewall">
@@ -7,10 +8,6 @@
             <h2 id="firewall">Firewall</h2>
             <p>Inbound rules at the provider. Traffic no rule allows is dropped; outbound traffic is not restricted.</p>
         </div>
-        @if (_view?.Firewall is { ManagedRules: not null } && !_editing)
-        {
-            <button class="btn btn-sm" @onclick="StartEditing"><Icon Name="edit" />Edit rules</button>
-        }
     </div>
     @if (_error is not null)
     {
@@ -26,37 +23,42 @@
     }
     else
     {
+        var managed = firewall.ManagedRules is not null;
         <div class="panel-body stack">
             @if (!firewall.IsFiltered)
             {
-                <Notice Kind="warn">No firewall applies: every port that a program on the server listens on is reachable from the internet.</Notice>
+                <Notice Kind="warn">No firewall applies: every port that a program on the server listens on is reachable from the internet. The rules below take effect once you turn the firewall on.</Notice>
             }
 
-            @if (_editing)
-            {
-                <div class="table-wrap">
-                    <table class="stack rule-editor">
-                        <thead><tr><th>Protocol</th><th>Port</th><th>Sources</th><th>Description</th><th><span class="sr-only">Actions</span></th></tr></thead>
-                        <tbody>
-                            @foreach (var row in _rows)
-                            {
-                                <tr>
-                                    <td data-label="Protocol">
-                                        <select @bind="row.Protocol" aria-label="Protocol">
-                                            @foreach (var protocol in Enum.GetValues<FirewallProtocol>())
-                                            {
-                                                <option value="@protocol">@protocol.ToString().ToUpperInvariant()</option>
-                                            }
-                                        </select>
-                                    </td>
-                                    <td data-label="Port"><input class="mono" @bind="row.Port" placeholder="@(row.Protocol == FirewallProtocol.Icmp ? "–" : "443")" disabled="@(row.Protocol == FirewallProtocol.Icmp)" aria-label="Port or range" /></td>
-                                    <td data-label="Sources"><input class="mono" @bind="row.Sources" placeholder="0.0.0.0/0, ::/0" spellcheck="false" aria-label="Source ranges" /></td>
-                                    <td data-label="Description"><input @bind="row.Description" maxlength="@ServerFirewalls.MaxDescriptionLength" aria-label="Description" /></td>
-                                    <td class="actions"><button class="btn btn-sm btn-ghost" @onclick="() => _rows.Remove(row)" title="Remove rule"><Icon Name="trash" /><span class="sr-only">Remove rule</span></button></td>
-                                </tr>
-                            }
-                        </tbody>
-                    </table>
+            <section class="panel-section" aria-label="Rules managed by ows">
+                <div class="edit-grid rules">
+                    <div class="row head"><span>Protocol</span><span>Port</span><span>Sources</span><span>Description</span><span></span></div>
+                    @foreach (var row in _rows)
+                    {
+                        <div class="row">
+                            <div data-label="Protocol">
+                                <select @bind="row.Protocol" aria-label="Protocol">
+                                    @foreach (var protocol in Enum.GetValues<FirewallProtocol>())
+                                    {
+                                        <option value="@protocol">@protocol.ToString().ToUpperInvariant()</option>
+                                    }
+                                </select>
+                            </div>
+                            <div data-label="Port">
+                                @if (row.Protocol == FirewallProtocol.Icmp)
+                                {
+                                    <span class="cell-text subtle">All</span>
+                                }
+                                else
+                                {
+                                    <input class="mono" @bind="row.Port" @bind:event="oninput" placeholder="443" aria-label="Port or range" />
+                                }
+                            </div>
+                            <div data-label="Sources" class="wide"><input class="mono" @bind="row.Sources" @bind:event="oninput" placeholder="0.0.0.0/0, ::/0" spellcheck="false" aria-label="Source ranges" /></div>
+                            <div data-label="Description" class="wide"><input @bind="row.Description" @bind:event="oninput" maxlength="@ServerFirewalls.MaxDescriptionLength" aria-label="Description" /></div>
+                            <div class="row-actions"><button class="btn btn-sm btn-ghost" @onclick="() => _rows.Remove(row)" title="Remove rule"><Icon Name="trash" /><span class="sr-only">Remove rule</span></button></div>
+                        </div>
+                    }
                 </div>
                 <div class="actions">
                     <button class="btn btn-sm" @onclick="() => _rows.Add(new RuleRow())"><Icon Name="plus" />Add rule</button>
@@ -65,20 +67,16 @@
                         <button class="btn btn-sm btn-ghost" @onclick="() => _rows.Add(RuleRow.From(preset.Rule))"><Icon Name="plus" />@preset.Name</button>
                     }
                 </div>
-                <p class="hint">Sources are IP addresses or ranges, separated by commas. 0.0.0.0/0 and ::/0 allow everyone. Ports are single ports or ranges such as 8000-8100.</p>
                 @if (!AllowsSsh)
                 {
-                    <Notice Kind="warn">No rule allows SSH (TCP 22). You lose remote shell access, and ows cannot install apps on this server.</Notice>
+                    <p class="field-error" role="alert">No rule allows SSH (TCP 22). You lose remote shell access, and ows cannot install apps on this server.</p>
                 }
-            }
-            else if (firewall.ManagedRules is { } rules)
-            {
-                <RuleTable Rules="rules" />
-            }
+                <p class="hint">Sources are IP addresses or ranges, separated by commas; 0.0.0.0/0 and ::/0 allow everyone. Ports are single ports or ranges such as 8000-8100.</p>
+            </section>
 
             @foreach (var other in firewall.OtherFirewalls)
             {
-                <div class="subsection">
+                <section class="panel-section" aria-label="@other.Name">
                     <h3>@other.Name <span class="tag">Managed outside ows</span></h3>
                     @if (other.InboundRules.Count == 0)
                     {
@@ -86,50 +84,79 @@
                     }
                     else
                     {
-                        <RuleTable Rules="other.InboundRules" />
+                        <div class="edit-grid rules">
+                            <div class="row head"><span>Protocol</span><span>Port</span><span>Sources</span><span>Description</span><span></span></div>
+                            @foreach (var rule in other.InboundRules)
+                            {
+                                <div class="row">
+                                    <div data-label="Protocol"><span class="tag">@rule.Protocol.ToString().ToUpperInvariant()</span></div>
+                                    <div data-label="Port" class="mono cell-text">@(rule.Port ?? "All")</div>
+                                    <div data-label="Sources" class="mono cell-text wide">@string.Join(", ", rule.Sources.Select(SourceLabel))</div>
+                                    <div data-label="Description" class="cell-text wide">@rule.Description</div>
+                                    <div></div>
+                                </div>
+                            }
+                        </div>
                     }
-                </div>
+                </section>
             }
         </div>
-        @if (_editing)
-        {
-            <div class="panel-footer">
-                @if (firewall.ManagedRules is not null)
+        <div class="panel-footer">
+            @if (managed)
+            {
+                @if (_confirmRemove)
                 {
-                    @if (_confirmRemove)
-                    {
-                        <button class="btn" @onclick="() => _confirmRemove = false">Keep firewall</button>
-                        <button class="btn btn-danger-solid" disabled="@_busy" @onclick="RemoveAsync" style="margin-right:auto">Remove firewall</button>
-                    }
-                    else
-                    {
-                        <button class="btn btn-danger" disabled="@_busy" @onclick="() => _confirmRemove = true" style="margin-right:auto">Remove firewall…</button>
-                    }
-                    <button class="btn" @onclick="() => _editing = false">Cancel</button>
+                    <button class="btn" @onclick="() => _confirmRemove = false">Keep firewall</button>
+                    <button class="btn btn-danger-solid" disabled="@_busy" @onclick="RemoveAsync" style="margin-right:auto">Remove firewall</button>
                 }
-                <button class="btn btn-primary" disabled="@(_busy || _rows.Count == 0)" @onclick="SaveAsync">
+                else
+                {
+                    <button class="btn btn-danger" disabled="@_busy" @onclick="() => _confirmRemove = true" style="margin-right:auto">Remove firewall…</button>
+                }
+                @if (IsDirty)
+                {
+                    <button class="btn" disabled="@_busy" @onclick="ResetRows">Undo changes</button>
+                    <button class="btn btn-primary" disabled="@_busy" @onclick="SaveAsync">
+                        @if (_busy)
+                        {
+                            <span class="spinner"></span>
+                        }
+                        Save rules
+                    </button>
+                }
+                else
+                {
+                    <span class="subtle" style="align-self:center">Rules are active at the provider.</span>
+                }
+            }
+            else
+            {
+                <button class="btn btn-primary" disabled="@_busy" @onclick="SaveAsync">
                     @if (_busy)
                     {
                         <span class="spinner"></span>
                     }
-                    @(firewall.ManagedRules is null ? "Turn on firewall" : "Save rules")
+                    Turn on firewall
                 </button>
-            </div>
-        }
+            }
+        </div>
     }
 </section>
 
 @code {
     private ServerFirewallView? _view;
     private List<RuleRow> _rows = [];
+    private string _saved = "";
     private string? _error;
-    private bool _editing;
     private bool _busy;
     private bool _confirmRemove;
 
     [Parameter, EditorRequired] public Guid ServerId { get; set; }
 
     private bool AllowsSsh => _rows.Any(r => r.Protocol == FirewallProtocol.Tcp && CoversPort(r.Port, 22));
+
+    /// <summary>The rules differ from what is active at the provider.</summary>
+    private bool IsDirty => Snapshot(_rows) != _saved;
 
     protected override Task OnInitializedAsync() => LoadAsync();
 
@@ -138,12 +165,7 @@
         try
         {
             _view = await Runner.RunAsync<ServerFirewalls, ServerFirewallView>(u => u.GetAsync(ServerId, CancellationToken.None));
-            // Without an ows firewall the editor is open right away, pre-filled with the usual web server rules.
-            if (_view.Firewall is { ManagedRules: null })
-            {
-                _editing = true;
-                _rows = [.. ServerFirewalls.Presets.Take(3).Select(p => RuleRow.From(p.Rule))];
-            }
+            ResetRows();
         }
         catch (Exception ex) when (UserFacingErrors.Matches(ex))
         {
@@ -152,10 +174,14 @@
         }
     }
 
-    private void StartEditing()
+    /// <summary>Shows the active rules, or the usual web server rules as a proposal when there is no ows firewall yet.</summary>
+    private void ResetRows()
     {
-        _rows = [.. (_view?.Firewall?.ManagedRules ?? []).Select(RuleRow.From)];
-        _editing = true;
+        var active = _view?.Firewall?.ManagedRules;
+        _rows = active is null
+            ? [.. ServerFirewalls.Presets.Take(3).Select(p => RuleRow.From(p.Rule))]
+            : [.. active.Select(RuleRow.From)];
+        _saved = active is null ? "" : Snapshot(_rows);
         _confirmRemove = false;
     }
 
@@ -163,15 +189,10 @@
     {
         var rules = _rows.Select(r => r.ToRule()).ToList();
         await Runner.RunAsync<ServerFirewalls>(u => u.SaveAsync(ServerId, rules, CancellationToken.None));
-        _editing = false;
     });
 
-    private Task RemoveAsync() => RunAsync(async () =>
-    {
-        await Runner.RunAsync<ServerFirewalls>(u => u.RemoveAsync(ServerId, CancellationToken.None));
-        _editing = false;
-        _confirmRemove = false;
-    });
+    private Task RemoveAsync() => RunAsync(() =>
+        Runner.RunAsync<ServerFirewalls>(u => u.RemoveAsync(ServerId, CancellationToken.None)));
 
     private async Task RunAsync(Func<Task> action)
     {
@@ -191,6 +212,16 @@
             _busy = false;
         }
     }
+
+    private static string Snapshot(IEnumerable<RuleRow> rows) =>
+        string.Join("\n", rows.Select(r => $"{r.Protocol}|{(r.Protocol == FirewallProtocol.Icmp ? "" : r.Port.Trim())}|{r.Sources.Trim()}|{r.Description.Trim()}"));
+
+    private static string SourceLabel(string source) => source switch
+    {
+        IpRanges.AnyIpv4 => "any IPv4",
+        IpRanges.AnyIpv6 => "any IPv6",
+        _ => source,
+    };
 
     private static bool CoversPort(string? port, int number)
     {
