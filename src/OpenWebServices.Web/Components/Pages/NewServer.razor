@@ -39,13 +39,13 @@ else if (_offers.Count == 0)
 }
 else
 {
-    var visible = FilteredOffers.ToList();
+    var visible = OfferRow.Merge(FilteredOffers);
     var pageRows = Paging.Slice(visible, _page).ToList();
-    var footnotes = Footnotes(pageRows);
+    var footnotes = Footnotes(pageRows.Select(r => r.Offer));
     <section class="panel" aria-labelledby="offers">
         <div class="panel-header">
             <h2 id="offers">1. Choose an offer</h2>
-            <span class="subtle">@visible.Count of @_offers.Count offers</span>
+            <span class="subtle">@visible.Count of @_rows!.Count offers</span>
         </div>
         <div class="toolbar">
             @if (Groups.Count > 1)
@@ -129,15 +129,16 @@ else
                     <tr><th>Type</th><th>Location</th><th>Group</th><th class="num" title="Monthly availability the provider's SLA promises">SLA</th><th class="num">vCPU</th><th class="num">Memory</th><th class="num">Disk</th><th class="num">Monthly, net</th><th class="num">Gross</th></tr>
                 </thead>
                 <tbody>
-                    @foreach (var o in pageRows)
+                    @foreach (var row in pageRows)
                     {
-                        <tr class="@(o.Available ? "selectable" : "unavailable") @(o.Key == _selectedKey ? "selected" : null)" @onclick="() => Select(o)">
-                            <td><label class="offer-pick"><input type="radio" name="offer" checked="@(o.Key == _selectedKey)" disabled="@(!o.Available)" aria-label="@($"{o.TypeName} in {o.Location}")" /><span><span class="offer-name"><strong>@o.TypeName</strong>@if (o.Billing is { } billing)
+                        var o = row.Offer;
+                        <tr class="@(row.Available ? "selectable" : "unavailable") @(row.Key == _selectedKey ? "selected" : null)" @onclick="() => Select(row)">
+                            <td><label class="offer-pick"><input type="radio" name="offer" checked="@(row.Key == _selectedKey)" disabled="@(!row.Available)" aria-label="@($"{o.TypeName} in {o.Location}")" /><span><span class="offer-name"><strong>@o.TypeName</strong>@if (o.Billing is { } billing)
                                 {
                                     <BillingTag Billing="billing" Number="@(NoteNumber(footnotes, billing))" />
                                 }</span><span class="secondary">@TierLine(o)</span></span></label></td>
                             <td data-label="Location">@o.LocationCity<span class="secondary">@o.Location · @o.Country</span></td>
-                            <td data-label="Group">@o.GroupName</td>
+                            <td data-label="Group">@string.Join(", ", row.GroupNames)</td>
                             <td data-label="SLA" class="num muted">@(o.Tier.AvailabilitySla is { } sla ? Formatting.Percent(sla) : "–")</td>
                             <td data-label="vCPU" class="num">@o.VCpus</td>
                             <td data-label="Memory" class="num">@o.MemoryGb GB</td>
@@ -165,13 +166,25 @@ else
     <section class="panel" aria-labelledby="configure">
         <div class="panel-header">
             <h2 id="configure">2. Configure</h2>
-            @if (Selected is { } chosen)
+            @if (Chosen is { } chosen)
             {
                 <span class="tag accent">@chosen.TypeName · @chosen.LocationCity · @Formatting.Money(chosen.MonthlyNet, chosen.Currency)/mo@(chosen.Billing is { } b ? $" · {b.Label}" : "")</span>
             }
         </div>
         <div class="panel-body">
             <div class="form-grid">
+                @if (Selected is { Orderable.Count: > 1 } selectedRow)
+                {
+                    <label class="field"><span>Group</span>
+                        <select @bind="_selectedGroupId">
+                            @foreach (var choice in selectedRow.Orderable)
+                            {
+                                <option value="@choice.GroupId">@choice.GroupName</option>
+                            }
+                        </select>
+                        <span class="hint">Several groups sell this offer. The server is created and billed in the one you pick.</span>
+                    </label>
+                }
                 <label class="field"><span>Name</span>
                     <input @bind="_name" @bind:event="oninput" placeholder="web-1" maxlength="63" />
                     <span class="hint">Lowercase letters, digits and hyphens.</span>
@@ -187,11 +200,11 @@ else
             </div>
         </div>
         <div class="panel-footer">
-            @if (Selected is null)
+            @if (Chosen is null)
             {
                 <span class="subtle" style="margin-right:auto; align-self:center">Select an offer above.</span>
             }
-            <button class="btn btn-primary" disabled="@(_busy || Selected is null || string.IsNullOrWhiteSpace(_name))" @onclick="CreateAsync">
+            <button class="btn btn-primary" disabled="@(_busy || Chosen is null || string.IsNullOrWhiteSpace(_name))" @onclick="CreateAsync">
                 @if (_busy)
                 {
                     <span class="spinner"></span><text>Creating…</text>
@@ -226,7 +239,17 @@ else
     private bool _onlyAvailable = true;
     private bool _busy;
 
-    private ServerOffer? Selected => _offers?.FirstOrDefault(o => o.Key == _selectedKey);
+    private Guid _selectedGroupId;
+
+    // Offers merged across groups; the list filters the raw offers and merges what is left.
+    private IReadOnlyList<OfferRow>? _rows;
+
+    private OfferRow? Selected => _rows?.FirstOrDefault(r => r.Key == _selectedKey);
+
+    /// <summary>The selected offer as sold by the chosen group.</summary>
+    private ServerOffer? Chosen => Selected?.Orderable is { Count: > 0 } orderable
+        ? orderable.FirstOrDefault(o => o.GroupId == _selectedGroupId) ?? orderable[0]
+        : null;
 
     private IReadOnlyList<string> Groups => _offers?.Select(o => o.GroupName).Distinct().Order().ToList() ?? [];
 
@@ -284,23 +307,26 @@ else
         {
             var result = await Runner.RunAsync<GetServerOffers, OffersResult>(q => q.ExecuteAsync(CancellationToken.None));
             (_offers, _groupErrors) = (result.Offers, result.Errors);
+            _rows = OfferRow.Merge(_offers);
         }
         catch (Exception ex) when (UserFacingErrors.Matches(ex))
         {
             _error = ex.Message;
-            _offers = [];
+            (_offers, _rows) = ([], []);
         }
     }
 
-    private void Select(ServerOffer offer)
+    private void Select(OfferRow row)
     {
-        if (offer.Available)
-            _selectedKey = offer.Key;
+        if (!row.Available)
+            return;
+        _selectedKey = row.Key;
+        _selectedGroupId = row.Orderable[0].GroupId;
     }
 
     private async Task CreateAsync()
     {
-        if (Selected is not { } offer)
+        if (Chosen is not { } offer)
             return;
 
         _busy = true;

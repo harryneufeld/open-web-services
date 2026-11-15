@@ -70,14 +70,15 @@ else
                 <table class="stack">
                     <thead><tr><th>Domain</th><th>Group</th><th>Status</th><th class="num">First year, net</th><th class="num">Renewal, net</th><th><span class="sr-only">Actions</span></th></tr></thead>
                     <tbody>
-                        @foreach (var r in _results)
+                        @foreach (var row in _results)
                         {
+                            var r = row.Result;
                             <tr class="@(r.Available ? null : "unavailable")">
                                 <td class="mono"><strong>@r.Domain</strong>@if (r.IsPremium)
                                     {
                                         <span class="tag billing">Premium</span>
                                     }</td>
-                                <td data-label="Group">@r.GroupName</td>
+                                <td data-label="Group">@string.Join(", ", row.GroupNames)</td>
                                 <td data-label="Status">
                                     @if (r.Available)
                                     {
@@ -106,11 +107,11 @@ else
                                 <td class="actions">
                                     @if (r.Available && _canOrder)
                                     {
-                                        <button class="btn btn-sm" disabled="@_busy" @onclick="() => StartOrder(r, transfer: false)">Order…</button>
+                                        <button class="btn btn-sm" disabled="@_busy" @onclick="() => StartOrder(row, transfer: false)">Order…</button>
                                     }
                                     else if (r.Transferable && _canOrder)
                                     {
-                                        <button class="btn btn-sm" disabled="@_busy" @onclick="() => StartOrder(r, transfer: true)">Transfer in…</button>
+                                        <button class="btn btn-sm" disabled="@_busy" @onclick="() => StartOrder(row, transfer: true)">Transfer in…</button>
                                     }
                                 </td>
                             </tr>
@@ -118,14 +119,14 @@ else
                     </tbody>
                 </table>
             </div>
-            @if (!_canOrder && _results.Any(r => r.Available || r.Transferable))
+            @if (!_canOrder && _results.Any(row => row.Result.Available || row.Result.Transferable))
             {
                 <div class="panel-body"><p class="hint">Ordering and transferring domains needs the Admin role in this tenant.</p></div>
             }
         }
     </section>
 
-    @if (_ordering is { } candidate)
+    @if (Ordering is { } candidate)
     {
         <section class="panel" aria-labelledby="order">
             <div class="panel-header">
@@ -167,6 +168,18 @@ else
             else if (_quote is not { } quote)
             {
                 <div class="panel-body stack">
+                    @if (_orderingRow is { Choices.Count: > 1 } orderingRow)
+                    {
+                        <label class="field"><span>Group</span>
+                            <select @bind="_orderingGroupId">
+                                @foreach (var choice in orderingRow.Choices)
+                                {
+                                    <option value="@choice.GroupId">@choice.GroupName</option>
+                                }
+                            </select>
+                            <span class="hint">Several groups offer this name. The account behind the one you pick holds the domain and pays for it.</span>
+                        </label>
+                    }
                     @if (_transferring)
                     {
                         <label class="field"><span>Auth code</span>
@@ -430,9 +443,14 @@ else
 @code {
     private IReadOnlyList<ProviderGroup>? _groups;
     private IReadOnlyList<GroupDomains>? _registered;
-    private IReadOnlyList<DomainAvailability>? _results;
+    private IReadOnlyList<DomainRow>? _results;
     private IReadOnlyList<string> _searchErrors = [];
-    private DomainAvailability? _ordering;
+    private DomainRow? _orderingRow;
+    private Guid _orderingGroupId;
+
+    /// <summary>The name being ordered, as offered by the chosen group.</summary>
+    private DomainAvailability? Ordering =>
+        _orderingRow?.Choices.FirstOrDefault(c => c.GroupId == _orderingGroupId) ?? _orderingRow?.Choices[0];
     private DomainQuote? _quote;
     private PlacedDomainOrder? _placed;
     private string? _error;
@@ -501,7 +519,7 @@ else
         try
         {
             var result = await Runner.RunAsync<DomainSearch, DomainSearchResult>(u => u.ExecuteAsync(_query, CancellationToken.None));
-            (_results, _searchErrors) = (result.Results, result.Errors);
+            (_results, _searchErrors) = (DomainRow.Merge(result.Results), result.Errors);
         }
         catch (Exception ex) when (UserFacingErrors.Matches(ex))
         {
@@ -559,9 +577,10 @@ else
         _authCodes[Key(group, domain)] = code;
     });
 
-    private void StartOrder(DomainAvailability candidate, bool transfer)
+    private void StartOrder(DomainRow row, bool transfer)
     {
-        _ordering = candidate;
+        _orderingRow = row;
+        _orderingGroupId = row.Choices[0].GroupId;
         _transferring = transfer;
         (_quote, _placed) = (null, null);
         (_legalAge, _payNow, _waiveWithdrawal) = (false, false, false);
@@ -571,13 +590,13 @@ else
 
     private void CloseOrder()
     {
-        (_ordering, _quote, _placed) = (null, null, null);
+        (_orderingRow, _quote, _placed) = (null, null, null);
         _authCodeInput = "";
     }
 
     private Task QuoteAsync() => RunAsync(async () =>
     {
-        var candidate = _ordering!;
+        var candidate = Ordering!;
         if (_transferring)
         {
             var authCode = _authCodeInput;
@@ -594,7 +613,7 @@ else
 
     private Task PlaceAsync() => RunAsync(async () =>
     {
-        var (candidate, quote) = (_ordering!, _quote!);
+        var (candidate, quote) = (Ordering!, _quote!);
         var options = new DomainOrderOptions(_payNow, _waiveWithdrawal);
         _placed = await Runner.RunAsync<PlaceDomainOrder, PlacedDomainOrder>(u =>
             u.ExecuteAsync(candidate.GroupId, quote, options, CancellationToken.None));
