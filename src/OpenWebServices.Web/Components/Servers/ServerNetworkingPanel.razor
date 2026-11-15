@@ -35,8 +35,25 @@
     {
         <div class="panel-body stack">
             <dl class="facts">
-                <div><dt>Public IPv4</dt><dd class="mono">@(net.PublicIpv4 ?? "–")</dd></div>
-                <div><dt>Public IPv6</dt><dd class="mono">@(net.PublicIpv6 ?? "–")</dd></div>
+                <div><dt>Public IPv4</dt><dd class="mono with-copy">@(net.PublicIpv4 ?? "–")@if (net.PublicIpv4 is { } ipv4)
+                    {
+                        <CopyButton Value="@ipv4" Label="IPv4 address" />
+                    }</dd></div>
+                <div><dt>Public IPv6</dt>
+                    @if (net.PublicIpv6 is { } ipv6)
+                    {
+                        var address = Formatting.Ipv6Address(ipv6);
+                        <dd class="mono with-copy">@address<CopyButton Value="@address" Label="IPv6 address" /></dd>
+                        @if (ipv6.Contains('/'))
+                        {
+                            <dd class="subtle with-copy">Network <span class="mono">@ipv6</span><CopyButton Value="@ipv6" Label="IPv6 network" /></dd>
+                        }
+                    }
+                    else
+                    {
+                        <dd>–</dd>
+                    }
+                </div>
             </dl>
 
             <section class="panel-section" aria-labelledby="rdns">
