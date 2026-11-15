@@ -23,8 +23,8 @@ internal sealed class OvhDomainRegistrar(OvhApiClient api, string subsidiary) : 
     private const string LegalAge = "OWNER_LEGAL_AGE";
 
     /// <summary>
-    /// OVHcloud's answer when it will not check an extension through the API (seen for .com and .eu, while .de works);
-    /// the same names can be checked in its Control Panel, so the request itself is fine.
+    /// OVHcloud's answer when it refuses to check a name, seen after one .com name was checked repeatedly while .de and
+    /// .eu checks kept working; it may be a temporary per-name limit.
     /// </summary>
     private const string RefusedCheck = "check failed";
 
@@ -100,7 +100,7 @@ internal sealed class OvhDomainRegistrar(OvhApiClient api, string subsidiary) : 
         catch (ProviderException ex) when (ex.Message.EndsWith(RefusedCheck, StringComparison.Ordinal))
         {
             return new DomainAvailability(domain, false, false, null, null, "",
-                "OVHcloud does not check this extension through its API. Look it up in the OVHcloud Control Panel.");
+                "OVHcloud refused to check this name right now, possibly after repeated checks. Try again later or look it up in the OVHcloud Control Panel.");
         }
         catch (ProviderException ex)
         {
