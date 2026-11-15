@@ -96,6 +96,7 @@ public class DomainTests
     {
         var handler = new OvhHandler();
         handler.Responses["POST order/cart"] = """{"cartId":"c1"}""";
+        handler.Responses["POST order/cart/c1/assign"] = "null";
         handler.Responses["GET order/cart/c1/domain?domain=free.com"] = """
             [{"action":"create","orderable":true,"pricingMode":"create-default","prices":[
               {"label":"PRICE","price":{"value":10.49,"currencyCode":"EUR","text":"10.49 €"}},
@@ -112,6 +113,7 @@ public class DomainTests
         Assert.Equal(12.99m, results[0].RenewalPrice);
         Assert.False(results[1].Available);
         Assert.Equal("Registered by someone else.", results[1].Note);
+        Assert.Contains("POST order/cart/c1/assign", handler.Requested);
         Assert.Contains("DELETE order/cart/c1", handler.Requested);
     }
 
