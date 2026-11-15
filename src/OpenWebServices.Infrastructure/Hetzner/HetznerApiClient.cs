@@ -62,6 +62,8 @@ internal sealed class HetznerApiClient(HttpClient http, string token)
         SendAsync(HttpMethod.Post, path, payload, ct, serializer: includeNulls ? JsonWithNulls : Json);
 
     /// <summary>Performs a GET and discards the body; throws <see cref="ProviderException"/> on any error.</summary>
+    public Task PutAsync(string path, object payload, CancellationToken ct) => SendAsync(HttpMethod.Put, path, payload, ct);
+
     public Task GetRawAsync(string path, CancellationToken ct) => SendAsync(HttpMethod.Get, path, null, ct);
 
     public Task DeleteAsync(string path, CancellationToken ct) =>

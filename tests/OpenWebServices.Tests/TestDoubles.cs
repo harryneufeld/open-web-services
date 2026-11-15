@@ -175,6 +175,8 @@ internal sealed class FakeConnection : IProviderConnection
     public IServerNetworkProvider? Networks => null;
     public IFirewallProvider? Firewalls => FirewallProvider;
     public IDomainRegistrar? Domains => Registrar;
+    public FakeLabelProvider? LabelProvider { get; set; } = new();
+    public IServerLabelProvider? ServerLabels => LabelProvider;
     public bool RejectCredentials { get; set; }
 
     public Task VerifyAsync(CancellationToken ct) =>
@@ -265,4 +267,18 @@ internal sealed class FakeDomainRegistrar : IDomainRegistrar
 
     public Task<IReadOnlyList<RegisteredDomain>> ListDomainsAsync(CancellationToken ct) =>
         Task.FromResult<IReadOnlyList<RegisteredDomain>>([new RegisteredDomain("mine.com")]);
+}
+
+internal sealed class FakeLabelProvider : IServerLabelProvider
+{
+    public Dictionary<string, IReadOnlyDictionary<string, string>> Labels { get; } = [];
+
+    public Task<IReadOnlyDictionary<string, string>> GetLabelsAsync(string externalServerId, CancellationToken ct) =>
+        Task.FromResult(Labels.GetValueOrDefault(externalServerId) ?? new Dictionary<string, string>());
+
+    public Task SetLabelsAsync(string externalServerId, IReadOnlyDictionary<string, string> labels, CancellationToken ct)
+    {
+        Labels[externalServerId] = labels;
+        return Task.CompletedTask;
+    }
 }

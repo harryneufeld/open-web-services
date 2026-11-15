@@ -50,7 +50,8 @@ internal sealed record HetznerServer(
     HetznerServerType? ServerType,
     HetznerLocation? Location,
     HetznerImage? Image,
-    List<HetznerPrivateNet>? PrivateNet = null);
+    List<HetznerPrivateNet>? PrivateNet = null,
+    Dictionary<string, string>? Labels = null);
 
 internal sealed record HetznerServerEnvelope(HetznerServer Server);
 
@@ -154,3 +155,5 @@ internal sealed record HetznerCreateFirewallBody(
 internal sealed record HetznerSetRulesBody(List<HetznerFirewallRule> Rules);
 
 internal sealed record HetznerFirewallResourcesBody(List<HetznerFirewallResource> RemoveFrom);
+
+internal sealed record HetznerLabelsBody(Dictionary<string, string> Labels);

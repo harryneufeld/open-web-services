@@ -80,7 +80,22 @@ Private networks need a vRack attached to the Public Cloud project; without one 
 activates a network in the server's region when needed and gives each region its own /24 pool of the network's range.
 Reverse DNS names must resolve to the address (an A or AAAA record) before OVHcloud accepts them.
 
-OVHcloud's API v1 has no security groups for Public Cloud instances, so ows does not manage OVHcloud firewalls yet.
+### Firewall
+
+API v1 has no security groups for Public Cloud instances, so ows uses the **Edge Network Firewall** on the instance's
+public IPv4 (`/ip/{ip}/firewall`, covered by the `/ip/*` rules above). That firewall is stateless, filters IPv4 only,
+holds 20 rules in order, and lets through anything no rule matches. ows therefore writes the whole rule set:
+
+| Sequence | Rule                                                        |
+| -------- | ----------------------------------------------------------- |
+| 0        | Allow TCP replies (`established`) to the server's own connections |
+| 1, 2     | Allow DNS (UDP from port 53) and NTP (UDP from port 123) replies |
+| 3-18     | Your rules, one sequence per IPv4 source                    |
+| 19       | Deny all other IPv4 traffic                                 |
+
+Rules are written first; the firewall is switched on once OVHcloud has applied them. IPv6 traffic is not filtered,
+and rule descriptions are not stored. An address whose firewall was set up in the OVHcloud Control Panel is shown
+read-only; ows does not overwrite it.
 
 ## DNS
 

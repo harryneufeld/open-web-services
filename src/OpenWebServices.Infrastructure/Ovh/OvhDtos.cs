@@ -122,3 +122,35 @@ internal sealed record OvhInterfaceFixedIp(string Ip, string? SubnetId);
 internal sealed record OvhInterface(string Id, string NetworkId, string? Type, List<OvhInterfaceFixedIp>? FixedIps);
 
 internal sealed record OvhCreateInterface(string NetworkId);
+
+// Edge Network Firewall (/ip/{block}/firewall): stateless, IPv4 only, 20 rules (sequence 0-19), first match wins.
+
+internal sealed record OvhFirewallIp(string IpOnFirewall, bool Enabled, string? State);
+
+internal sealed record OvhAddFirewallIp(string IpOnFirewall);
+
+internal sealed record OvhEnableFirewall(bool Enabled);
+
+internal sealed record OvhFirewallRule(
+    long Sequence,
+    string Action,
+    string Protocol,
+    string? Source,
+    string? DestinationPort,
+    string? SourcePort,
+    string? TcpOption,
+    string? State);
+
+internal sealed record OvhRange(long From, long To);
+
+internal sealed record OvhTcpOption(string Option);
+
+internal sealed record OvhCreateFirewallRule(
+    string Sequence,
+    string Action,
+    string Protocol,
+    string? Source = null,
+    long? DestinationPort = null,
+    OvhRange? DestinationPortRange = null,
+    long? SourcePort = null,
+    OvhTcpOption? TcpOption = null);

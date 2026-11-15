@@ -25,14 +25,21 @@
     {
         var managed = firewall.ManagedRules is not null;
         <div class="panel-body stack">
+            @if (firewall.Limits.Note is { } note)
+            {
+                <Notice>@note</Notice>
+            }
             @if (!firewall.IsFiltered)
             {
                 <Notice Kind="warn">No firewall applies: every port that a program on the server listens on is reachable from the internet. The rules below take effect once you turn the firewall on.</Notice>
             }
 
             <section class="panel-section" aria-label="Rules managed by ows">
-                <div class="edit-grid rules">
-                    <div class="row head"><span>Protocol</span><span>Port</span><span>Sources</span><span>Description</span><span></span></div>
+                <div class="edit-grid rules @(Descriptions ? null : "no-description")">
+                    <div class="row head"><span>Protocol</span><span>Port</span><span>Sources</span>@if (Descriptions)
+                        {
+                            <span>Description</span>
+                        }<span></span></div>
                     @foreach (var row in _rows)
                     {
                         <div class="row">
@@ -55,18 +62,25 @@
                                 }
                             </div>
                             <div data-label="Sources" class="wide"><input class="mono" @bind="row.Sources" @bind:event="oninput" placeholder="0.0.0.0/0, ::/0" spellcheck="false" aria-label="Source ranges" /></div>
-                            <div data-label="Description" class="wide"><input @bind="row.Description" @bind:event="oninput" maxlength="@ServerFirewalls.MaxDescriptionLength" aria-label="Description" /></div>
+                            @if (Descriptions)
+                            {
+                                <div data-label="Description" class="wide"><input @bind="row.Description" @bind:event="oninput" maxlength="@ServerFirewalls.MaxDescriptionLength" aria-label="Description" /></div>
+                            }
                             <div class="row-actions"><button class="btn btn-sm btn-ghost" @onclick="() => _rows.Remove(row)" title="Remove rule"><Icon Name="trash" /><span class="sr-only">Remove rule</span></button></div>
                         </div>
                     }
                 </div>
                 <div class="actions">
-                    <button class="btn btn-sm" @onclick="() => _rows.Add(new RuleRow())"><Icon Name="plus" />Add rule</button>
+                    <button class="btn btn-sm" @onclick="() => _rows.Add(NewRow())"><Icon Name="plus" />Add rule</button>
                     @foreach (var preset in ServerFirewalls.Presets)
                     {
-                        <button class="btn btn-sm btn-ghost" @onclick="() => _rows.Add(RuleRow.From(preset.Rule))"><Icon Name="plus" />@preset.Name</button>
+                        <button class="btn btn-sm btn-ghost" @onclick="() => _rows.Add(Proposal(preset.Rule))"><Icon Name="plus" />@preset.Name</button>
                     }
                 </div>
+                @if (MaxRules is { } max && UsedSlots > max)
+                {
+                    <p class="field-error" role="alert">These rules need @UsedSlots slots; this provider's firewall fits @max. Each IPv4 source counts as one.</p>
+                }
                 @if (!AllowsSsh)
                 {
                     <p class="field-error" role="alert">No rule allows SSH (TCP 22). You lose remote shell access, and ows cannot install apps on this server.</p>
@@ -84,15 +98,21 @@
                     }
                     else
                     {
-                        <div class="edit-grid rules">
-                            <div class="row head"><span>Protocol</span><span>Port</span><span>Sources</span><span>Description</span><span></span></div>
+                        <div class="edit-grid rules @(Descriptions ? null : "no-description")">
+                            <div class="row head"><span>Protocol</span><span>Port</span><span>Sources</span>@if (Descriptions)
+                                {
+                                    <span>Description</span>
+                                }<span></span></div>
                             @foreach (var rule in other.InboundRules)
                             {
                                 <div class="row">
                                     <div data-label="Protocol"><span class="tag">@rule.Protocol.ToString().ToUpperInvariant()</span></div>
                                     <div data-label="Port" class="mono cell-text">@(rule.Port ?? "All")</div>
                                     <div data-label="Sources" class="mono cell-text wide">@string.Join(", ", rule.Sources.Select(SourceLabel))</div>
-                                    <div data-label="Description" class="cell-text wide">@rule.Description</div>
+                                    @if (Descriptions)
+                                    {
+                                        <div data-label="Description" class="cell-text wide">@rule.Description</div>
+                                    }
                                     <div></div>
                                 </div>
                             }
@@ -153,6 +173,15 @@
 
     [Parameter, EditorRequired] public Guid ServerId { get; set; }
 
+    private FirewallLimits Limits => _view?.Firewall?.Limits ?? FirewallLimits.Full;
+
+    private bool Descriptions => Limits.StoresDescriptions;
+
+    private int? MaxRules => Limits.MaxRules;
+
+    /// <summary>Provider slots the rules take: one per IPv4 source where IPv6 is not filtered.</summary>
+    private int UsedSlots => _rows.Sum(r => Limits.FiltersIpv6 ? 1 : r.ToRule().Sources.Count(s => !s.Contains(':')));
+
     private bool AllowsSsh => _rows.Any(r => r.Protocol == FirewallProtocol.Tcp && CoversPort(r.Port, 22));
 
     /// <summary>The rules differ from what is active at the provider.</summary>
@@ -179,11 +208,17 @@
     {
         var active = _view?.Firewall?.ManagedRules;
         _rows = active is null
-            ? [.. ServerFirewalls.Presets.Take(3).Select(p => RuleRow.From(p.Rule))]
+            ? [.. ServerFirewalls.Presets.Take(3).Select(p => Proposal(p.Rule))]
             : [.. active.Select(RuleRow.From)];
         _saved = active is null ? "" : Snapshot(_rows);
         _confirmRemove = false;
     }
+
+    /// <summary>A preset as a row, without IPv6 sources when the provider cannot filter IPv6.</summary>
+    private RuleRow Proposal(FirewallRule rule) =>
+        RuleRow.From(Limits.FiltersIpv6 ? rule : rule with { Sources = [.. rule.Sources.Where(s => !s.Contains(':'))] });
+
+    private RuleRow NewRow() => new() { Sources = Limits.FiltersIpv6 ? "0.0.0.0/0, ::/0" : "0.0.0.0/0" };
 
     private Task SaveAsync() => RunAsync(async () =>
     {
@@ -233,7 +268,7 @@
     {
         public FirewallProtocol Protocol { get; set; } = FirewallProtocol.Tcp;
         public string Port { get; set; } = "";
-        public string Sources { get; set; } = "0.0.0.0/0, ::/0";
+        public string Sources { get; set; } = "0.0.0.0/0";
         public string Description { get; set; } = "";
 
         public static RuleRow From(FirewallRule rule) => new()

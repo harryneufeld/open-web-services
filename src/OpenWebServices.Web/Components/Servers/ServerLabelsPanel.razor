@@ -1,0 +1,114 @@
+@* Key/value labels of a server, edited in place (docs/design.md). Hidden for providers without labels. *@
+@inject UseCaseRunner Runner
+
+@if (_view?.Labels is not null || _error is not null)
+{
+    <section class="panel" aria-labelledby="labels">
+        <div class="panel-header">
+            <div>
+                <h2 id="labels">Labels</h2>
+                <p>Key/value pairs at the provider, e.g. env=production, for filtering and automation.</p>
+            </div>
+        </div>
+        <div class="panel-body stack">
+            @if (_error is not null)
+            {
+                <Notice Kind="error">@_error</Notice>
+            }
+            @if (_rows.Count > 0)
+            {
+                <div class="edit-grid two">
+                    <div class="row head"><span>Key</span><span>Value</span><span></span></div>
+                    @foreach (var row in _rows)
+                    {
+                        <div class="row">
+                            <div data-label="Key"><input class="mono" @bind="row.Key" @bind:event="oninput" placeholder="env" spellcheck="false" aria-label="Label key" /></div>
+                            <div data-label="Value"><input class="mono" @bind="row.Value" @bind:event="oninput" placeholder="production" spellcheck="false" aria-label="Label value" /></div>
+                            <div class="row-actions"><button class="btn btn-sm btn-ghost" @onclick="() => _rows.Remove(row)" title="Remove label"><Icon Name="trash" /><span class="sr-only">Remove label @row.Key</span></button></div>
+                        </div>
+                    }
+                </div>
+            }
+            else
+            {
+                <p class="hint">No labels yet.</p>
+            }
+            <div class="actions"><button class="btn btn-sm" @onclick="() => _rows.Add(new LabelRow())"><Icon Name="plus" />Add label</button></div>
+        </div>
+        @if (IsDirty)
+        {
+            <div class="panel-footer">
+                <button class="btn" disabled="@_busy" @onclick="Reset">Undo changes</button>
+                <button class="btn btn-primary" disabled="@_busy" @onclick="SaveAsync">
+                    @if (_busy)
+                    {
+                        <span class="spinner"></span>
+                    }
+                    Save labels
+                </button>
+            </div>
+        }
+    </section>
+}
+
+@code {
+    private ServerLabelsView? _view;
+    private List<LabelRow> _rows = [];
+    private string _saved = "";
+    private string? _error;
+    private bool _busy;
+
+    [Parameter, EditorRequired] public Guid ServerId { get; set; }
+
+    private bool IsDirty => Snapshot() != _saved;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            _view = await Runner.RunAsync<ServerLabels, ServerLabelsView>(u => u.GetAsync(ServerId, CancellationToken.None));
+            Reset();
+        }
+        catch (Exception ex) when (UserFacingErrors.Matches(ex))
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private void Reset()
+    {
+        _rows = [.. (_view?.Labels ?? new Dictionary<string, string>()).OrderBy(l => l.Key, StringComparer.Ordinal)
+            .Select(l => new LabelRow { Key = l.Key, Value = l.Value })];
+        _saved = Snapshot();
+    }
+
+    private string Snapshot() => string.Join("\n", _rows.Select(r => $"{r.Key.Trim()}={r.Value.Trim()}"));
+
+    private async Task SaveAsync()
+    {
+        _busy = true;
+        _error = null;
+        try
+        {
+            var labels = _rows.Select(r => KeyValuePair.Create(r.Key, r.Value)).ToList();
+            await Runner.RunAsync<ServerLabels>(u => u.SaveAsync(ServerId, labels, CancellationToken.None));
+            await LoadAsync();
+        }
+        catch (Exception ex) when (UserFacingErrors.Matches(ex))
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private sealed class LabelRow
+    {
+        public string Key { get; set; } = "";
+        public string Value { get; set; } = "";
+    }
+}

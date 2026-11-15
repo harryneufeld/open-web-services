@@ -47,6 +47,14 @@ public interface IServerNetworkProvider
     Task DetachFromPrivateNetworkAsync(string externalServerId, string networkId, CancellationToken ct);
 }
 
+/// <summary>Key/value labels on servers, e.g. env=production. Setting them replaces all labels of the server.</summary>
+public interface IServerLabelProvider
+{
+    Task<IReadOnlyDictionary<string, string>> GetLabelsAsync(string externalServerId, CancellationToken ct);
+
+    Task SetLabelsAsync(string externalServerId, IReadOnlyDictionary<string, string> labels, CancellationToken ct);
+}
+
 public enum FirewallProtocol { Tcp, Udp, Icmp }
 
 /// <summary>One inbound allow rule. Everything that no rule allows is dropped once a firewall applies to a server.</summary>
@@ -62,6 +70,18 @@ public sealed record AppliedFirewall(string ExternalId, string Name, IReadOnlyLi
 public sealed record ServerFirewall(IReadOnlyList<FirewallRule>? ManagedRules, IReadOnlyList<AppliedFirewall> OtherFirewalls)
 {
     public bool IsFiltered => ManagedRules is not null || OtherFirewalls.Count > 0;
+
+    /// <summary>What the provider's firewall can express; the UI adapts its form to it.</summary>
+    public FirewallLimits Limits { get; init; } = FirewallLimits.Full;
+}
+
+/// <param name="FiltersIpv6">IPv6 traffic is filtered too; when false, IPv6 sources are ignored and IPv6 stays open.</param>
+/// <param name="StoresDescriptions">Rule descriptions are kept at the provider.</param>
+/// <param name="MaxRules">How many rules fit, counting one per IPv4 source; null when the limit is not a concern.</param>
+/// <param name="Note">How the provider's firewall works, shown with the rules.</param>
+public sealed record FirewallLimits(bool FiltersIpv6, bool StoresDescriptions, int? MaxRules, string? Note = null)
+{
+    public static readonly FirewallLimits Full = new(true, true, null);
 }
 
 /// <summary>

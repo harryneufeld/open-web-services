@@ -77,9 +77,12 @@ internal sealed class OvhConnector(IHttpClientFactory httpClients, ILogger<OvhAp
         public IDnsProvider Dns { get; } = new OvhDnsProvider(api);
         public IServerNetworkProvider Networks { get; } = new OvhNetworkProvider(api, projectId);
 
-        // API v1 has no security groups for Public Cloud instances (see docs/ovh.md).
-        public IFirewallProvider? Firewalls => null;
+        // API v1 has no security groups for Public Cloud instances; the Edge Network Firewall is used instead.
+        public IFirewallProvider Firewalls { get; } = new OvhFirewallProvider(api, projectId);
         public IDomainRegistrar Domains { get; } = new OvhDomainRegistrar(api, subsidiary);
+
+        // Public Cloud instances have no labels in API v1.
+        public IServerLabelProvider? ServerLabels => null;
 
         public Task VerifyAsync(CancellationToken ct) => api.GetRawAsync("me", ct);
     }
