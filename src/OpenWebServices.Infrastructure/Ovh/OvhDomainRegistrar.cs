@@ -23,8 +23,8 @@ internal sealed class OvhDomainRegistrar(OvhApiClient api, string subsidiary) : 
     private const string LegalAge = "OWNER_LEGAL_AGE";
 
     /// <summary>
-    /// OVHcloud's answer when it refuses to check a name, seen after one .com name was checked repeatedly while .de and
-    /// .eu checks kept working; it may be a temporary per-name limit.
+    /// OVHcloud's answer when it refuses to check a name: a temporary per-name limit after the same name was checked
+    /// several times within minutes. Other names keep working, and the limit lifts after a while.
     /// </summary>
     private const string RefusedCheck = "check failed";
 
