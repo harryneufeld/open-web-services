@@ -59,7 +59,10 @@ else
         <div class="panel-header"><h2 id="details">Details</h2></div>
         <div class="panel-body">
             <dl class="facts">
-                <div><dt>Public IPv4</dt><dd class="mono">@(server.PublicIpv4 ?? "–")</dd></div>
+                <div><dt>Public IPv4</dt><dd class="mono with-copy">@(server.PublicIpv4 ?? "–")@if (server.PublicIpv4 is { } ipv4)
+                    {
+                        <CopyButton Value="@ipv4" Label="IPv4 address" />
+                    }</dd></div>
                 <div><dt>Provider</dt><dd>@_view.ProviderName</dd></div>
                 <div><dt>Group</dt><dd><a href="/groups/@server.GroupId">@_view.GroupName</a></dd></div>
                 <div><dt>Location</dt><dd>@server.Location</dd></div>

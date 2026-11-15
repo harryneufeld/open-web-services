@@ -647,3 +647,12 @@ tr.editing > td { padding: 14px 16px; background: var(--surface-2); white-space:
     .edit-grid > .row > .wide, .edit-grid > .row > .row-actions { grid-column: 1 / -1; }
     .edit-grid > .divider { display: none; }
 }
+
+/* Copy buttons next to values such as IP addresses. */
+.with-copy { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.copy-btn { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; padding: 0; border: 0; border-radius: var(--radius); background: transparent; color: var(--text-3); cursor: pointer; }
+.copy-btn:hover { background: var(--surface-hover); color: var(--text); }
+.copy-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.copy-btn .icon { width: 15px; height: 15px; }
+.copy-btn.copied { color: var(--ok); }
+.copy-btn.failed { color: var(--danger); }
