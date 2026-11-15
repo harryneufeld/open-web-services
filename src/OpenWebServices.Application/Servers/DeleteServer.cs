@@ -47,7 +47,7 @@ public sealed class DeleteServer(
         {
             await firewalls.RemoveServerFirewallAsync(externalId, ct);
         }
-        catch (ProviderException)
+        catch (Exception ex) when (ex is ProviderException or NotFoundException)
         {
         }
     }

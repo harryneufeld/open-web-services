@@ -35,6 +35,9 @@ public interface IProviderConnection
     /// <summary>Provider-side firewalls in front of servers.</summary>
     IFirewallProvider? Firewalls { get; }
 
+    /// <summary>Key/value labels on servers, for providers that support them.</summary>
+    IServerLabelProvider? ServerLabels { get; }
+
     /// <summary>Domain name search and ordering, for providers that are also registrars.</summary>
     IDomainRegistrar? Domains { get; }
 
