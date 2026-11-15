@@ -70,10 +70,22 @@
                                         <button class="btn btn-sm btn-ghost" disabled="@_busy" @onclick="() => _ptrDrafts.Remove(entry.Ip)">Undo</button>
                                         <button class="btn btn-sm btn-primary" disabled="@_busy" @onclick="() => SavePtrAsync(entry)">Save</button>
                                     }
+                                    else if (net.CanEditReverseDns && entry.IsRemovable && entry.Ptr is not null)
+                                    {
+                                        @if (_confirmRemovePtr == entry.Ip)
+                                        {
+                                            <button class="btn btn-sm" @onclick="() => _confirmRemovePtr = null">Cancel</button>
+                                            <button class="btn btn-sm btn-danger-solid" disabled="@_busy" @onclick="() => RemovePtrAsync(entry)">Remove</button>
+                                        }
+                                        else
+                                        {
+                                            <button class="btn btn-sm btn-ghost" disabled="@_busy" @onclick="() => _confirmRemovePtr = entry.Ip" title="Remove"><Icon Name="trash" /><span class="sr-only">Remove reverse DNS of @entry.Ip</span></button>
+                                        }
+                                    }
                                 </div>
                             </div>
                         }
-                        @if (net.CanEditReverseDns && net.PublicIpv6 is not null)
+                        @if (net.CanEditReverseDns && HasIpv6Network(net))
                         {
                             <div class="row add">
                                 <div data-label="IPv6 address"><input class="mono" @bind="_newPtrIp" @bind:event="oninput" spellcheck="false" aria-label="IPv6 address to add" /></div>
@@ -86,7 +98,7 @@
                     {
                         <p class="field-error" role="alert">@_addPtrHint</p>
                     }
-                    @if (net.CanEditReverseDns && net.PublicIpv6 is not null)
+                    @if (net.CanEditReverseDns && HasIpv6Network(net))
                     {
                         <p class="hint">The last row names another address in @net.PublicIpv6. Clear a host name and save to reset it to the provider default.</p>
                     }
@@ -173,6 +185,7 @@
     private string _newPtrIp = "";
     private string? _addPtrHint;
     private string? _networkHint;
+    private string? _confirmRemovePtr;
     private string _newPtrValue = "";
     private string? _confirmDetach;
     private string _joinNetworkId = "";
@@ -210,6 +223,15 @@
 
     private bool IsChanged(ReverseDnsEntry entry) =>
         _ptrDrafts.TryGetValue(entry.Ip, out var draft) && draft.Trim() != (entry.Ptr ?? "");
+
+    /// <summary>A whole IPv6 network (Hetzner's /64) lets every address in it get a name; a single address does not.</summary>
+    private static bool HasIpv6Network(ServerNetworking net) => net.PublicIpv6?.Contains('/') == true;
+
+    private Task RemovePtrAsync(ReverseDnsEntry entry) => RunAsync(async () =>
+    {
+        await Runner.RunAsync<ServerNetworks>(u => u.SetReverseDnsAsync(ServerId, entry.Ip, null, CancellationToken.None));
+        _confirmRemovePtr = null;
+    });
 
     private Task SavePtrAsync(ReverseDnsEntry entry) => RunAsync(async () =>
     {
