@@ -9,7 +9,7 @@ public enum TenantRole
     /// <summary>Operates resources: servers, DNS, apps.</summary>
     Member = 1,
 
-    /// <summary>Also manages provider groups (credentials), invitations and non-owner members.</summary>
+    /// <summary>Also manages provider groups (credentials), domain orders, invitations and non-owner members.</summary>
     Admin = 2,
 
     /// <summary>Also manages owners and tenant settings.</summary>
@@ -23,7 +23,7 @@ public static class TenantRoles
     public static string Describe(TenantRole role) => role switch
     {
         TenantRole.Owner => "Everything, including owners and tenant settings",
-        TenantRole.Admin => "Provider groups, invitations and members",
+        TenantRole.Admin => "Provider groups, domain orders, invitations and members",
         TenantRole.Member => "Servers, DNS and apps",
         _ => "Read-only",
     };

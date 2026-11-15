@@ -8,5 +8,6 @@ public static class UserFacingErrors
 {
     public static bool Matches(Exception ex) => ex is
         DomainException or NotFoundException or ProviderException
-        or ProviderNotConfiguredException or OfferUnavailableException or CapabilityNotSupportedException;
+        or ProviderNotConfiguredException or OfferUnavailableException or CapabilityNotSupportedException
+        or FeatureNotSupportedException;
 }

@@ -10,16 +10,20 @@ public enum ResourceKind
     None = 0,
     Servers = 1,
     Dns = 2,
+
+    /// <summary>Searching and ordering domain names at a registrar.</summary>
+    Domains = 4,
 }
 
 public static class ResourceKinds
 {
-    public static IReadOnlyList<ResourceKind> All { get; } = [ResourceKind.Servers, ResourceKind.Dns];
+    public static IReadOnlyList<ResourceKind> All { get; } = [ResourceKind.Servers, ResourceKind.Dns, ResourceKind.Domains];
 
     public static string Label(ResourceKind kind) => kind switch
     {
         ResourceKind.Servers => "Servers",
         ResourceKind.Dns => "DNS zones",
+        ResourceKind.Domains => "Domain registrations",
         _ => kind.ToString(),
     };
 

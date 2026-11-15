@@ -1,0 +1,32 @@
+@* Small icon button next to a value (IP address, ID) that copies it; shows a check mark for a moment. *@
+@inject IJSRuntime JS
+
+<button type="button" class="copy-btn @(_state)" title="@Title" aria-label="@($"Copy {Label}")" @onclick="CopyAsync">
+    <Icon Name="@(_state == "copied" ? "check" : "copy")" />
+</button>
+<span class="sr-only" role="status">@(_state == "copied" ? $"{Label} copied" : _state == "failed" ? "Copying failed" : "")</span>
+
+@code {
+    private string? _state;
+
+    [Parameter, EditorRequired] public string Value { get; set; } = "";
+
+    /// <summary>What is copied, for screen readers, e.g. "IPv4 address".</summary>
+    [Parameter] public string Label { get; set; } = "value";
+
+    private string Title => _state switch
+    {
+        "copied" => "Copied",
+        "failed" => "Copying failed, select the text instead",
+        _ => $"Copy {Value}",
+    };
+
+    private async Task CopyAsync()
+    {
+        var copied = await JS.InvokeAsync<bool>("owsCopy", Value);
+        _state = copied ? "copied" : "failed";
+        StateHasChanged();
+        await Task.Delay(1500);
+        _state = null;
+    }
+}

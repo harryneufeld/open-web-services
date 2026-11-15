@@ -29,6 +29,18 @@ public interface IProviderConnection
 
     IDnsProvider? Dns { get; }
 
+    /// <summary>Addresses, reverse DNS and private networks of servers. Null when the provider exposes none.</summary>
+    IServerNetworkProvider? Networks { get; }
+
+    /// <summary>Provider-side firewalls in front of servers.</summary>
+    IFirewallProvider? Firewalls { get; }
+
+    /// <summary>Key/value labels on servers, for providers that support them.</summary>
+    IServerLabelProvider? ServerLabels { get; }
+
+    /// <summary>Domain name search and ordering, for providers that are also registrars.</summary>
+    IDomainRegistrar? Domains { get; }
+
     /// <summary>Checks that the credentials are accepted. Throws <see cref="ProviderException"/> otherwise.</summary>
     Task VerifyAsync(CancellationToken ct);
 }
@@ -93,4 +105,13 @@ public static class ProviderConnectionExtensions
 
     public static IDnsProvider RequireDns(this IProviderConnection connection) =>
         connection.Dns ?? throw new CapabilityNotSupportedException(connection.Type.DisplayName, ResourceKind.Dns);
+
+    public static IDomainRegistrar RequireDomains(this IProviderConnection connection) =>
+        connection.Domains ?? throw new CapabilityNotSupportedException(connection.Type.DisplayName, ResourceKind.Domains);
+
+    public static IServerNetworkProvider RequireNetworks(this IProviderConnection connection) =>
+        connection.Networks ?? throw new FeatureNotSupportedException(connection.Type.DisplayName, "server networking");
+
+    public static IFirewallProvider RequireFirewalls(this IProviderConnection connection) =>
+        connection.Firewalls ?? throw new FeatureNotSupportedException(connection.Type.DisplayName, "firewalls");
 }

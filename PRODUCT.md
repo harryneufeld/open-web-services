@@ -33,6 +33,13 @@ living at the provider; ows imports and manages them through each provider's API
 
 - Servers: list, import, create from offers, power on/off/reboot, delete, app install (only on servers created by ows).
 - DNS: zones (import, create, delete) and record sets (read live, create, edit, delete).
+- Server networking and firewall (read and written live): public addresses, reverse DNS, private networks, and one
+  inbound firewall per server managed by ows; firewalls made elsewhere are shown, never changed. Networking and
+  firewalls for Hetzner and OVHcloud (OVHcloud's Edge Network Firewall: IPv4 only). Server labels for Hetzner.
+- Offers carry a provider-neutral category (shared budget, dedicated, compute-optimized, ...) and the availability
+  SLA the provider publishes; unknown SLAs stay empty instead of guessed.
+- Domains: search availability and price across registrar groups, quote and place orders (Admin role, audited),
+  list registered domains. OVHcloud today.
 - Built with ASP.NET Core Blazor Server (interactive server rendering), plain CSS, no JS framework.
 - Runs on low-power hardware (e.g. a Raspberry Pi 4), possibly without access to CDNs: no external font or asset hosts.
 - Prices are shown net in the provider's currency.

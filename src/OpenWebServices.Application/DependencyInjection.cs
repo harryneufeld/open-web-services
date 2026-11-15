@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using OpenWebServices.Application.Abstractions;
 using OpenWebServices.Application.Apps;
 using OpenWebServices.Application.Dns;
+using OpenWebServices.Application.Domains;
 using OpenWebServices.Application.Groups;
 using OpenWebServices.Application.Offers;
 using OpenWebServices.Application.Platform;
@@ -45,11 +46,18 @@ public static class DependencyInjection
         .AddScoped<ControlServerPower>()
         .AddScoped<DeleteServer>()
         .AddScoped<ServerQueries>()
+        .AddScoped<ServerNetworks>()
+        .AddScoped<ServerFirewalls>()
+        .AddScoped<ServerLabels>()
         .AddScoped<GetServerOffers>()
         .AddScoped<DnsQueries>()
         .AddScoped<CreateDnsZone>()
         .AddScoped<DeleteDnsZone>()
         .AddScoped<DnsRecords>()
+        .AddScoped<DomainSearch>()
+        .AddScoped<DomainQueries>()
+        .AddScoped<QuoteDomainOrder>()
+        .AddScoped<PlaceDomainOrder>()
         .AddScoped<RequestAppInstall>()
         .AddScoped<RunAppInstall>();
 }

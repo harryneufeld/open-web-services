@@ -12,6 +12,9 @@ public sealed record OwsService(string Key, string Name, string Badge, string Pl
     public static readonly OwsService Dns = new("r66", "Route 66", "66", "DNS",
         "DNS that takes you where you're going. Get your kicks on port 53.", "/dns");
 
+    public static readonly OwsService Domains = new("l42", "Lot 42", "42", "Domains",
+        "A plot of the internet with your name on it. Search, compare, claim.", "/domains");
+
     public static readonly OwsService Groups = new("iou", "IOU", "IOU", "Provider groups",
         "Identity of Owners & Users. Who's paying for what, honestly.", "/groups");
 

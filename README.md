@@ -25,7 +25,12 @@ Adding a provider = implement `IProviderConnector` (returns an `IProviderConnect
 connector's `ProviderTypeInfo`. A new resource kind = a `ResourceKind` flag, a capability interface, and an
 `IResourceSync` implementation.
 
-Provider setup notes: [OVHcloud API access rules](docs/ovh.md) (the consumer key must be granted each route ows calls).
+Server networking (`IServerNetworkProvider`), firewalls (`IFirewallProvider`) and domain registration
+(`IDomainRegistrar`) are optional capabilities of a connection; the UI explains when a provider has none. They are
+read and written live at the provider, nothing is stored. Offers carry an `OfferTier` (provider-neutral category and
+published availability SLA) for filtering.
+
+Provider setup notes: [OVHcloud setup](docs/ovh.md) (one group per Public Cloud project; consumer key with GET, POST, PUT and DELETE on `/*`).
 
 ## Run locally
 
