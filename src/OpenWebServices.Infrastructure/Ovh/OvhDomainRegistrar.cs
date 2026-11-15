@@ -12,7 +12,14 @@ internal sealed class OvhDomainRegistrar(OvhApiClient api, string subsidiary) : 
 {
     private const int MaxConcurrentChecks = 4;
     private const string CreateAction = "create";
+    private const string TransferAction = "transfer";
     private const string OneYear = "P1Y";
+
+    /// <summary>The cart configuration that carries the auth code of an incoming transfer.</summary>
+    private const string AuthInfo = "AUTH_INFO";
+
+    private const string Locked = "locked";
+    private const string Unlocked = "unlocked";
 
     /// <summary>Configurations OVHcloud fills from the account when they are left empty.</summary>
     private static readonly HashSet<string> DefaultedConfigurations = new(StringComparer.Ordinal)
@@ -46,22 +53,64 @@ internal sealed class OvhDomainRegistrar(OvhApiClient api, string subsidiary) : 
         }
     }
 
-    public async Task<DomainQuote> QuoteAsync(string domain, bool ownerIsOfLegalAge, CancellationToken ct)
+    public Task<DomainQuote> QuoteAsync(string domain, bool ownerIsOfLegalAge, CancellationToken ct) =>
+        QuoteCoreAsync(domain, CreateAction, authCode: null, ownerIsOfLegalAge, ct);
+
+    public Task<DomainQuote> QuoteTransferAsync(string domain, string authCode, bool ownerIsOfLegalAge, CancellationToken ct) =>
+        QuoteCoreAsync(domain, TransferAction, authCode, ownerIsOfLegalAge, ct);
+
+    public async Task SetTransferLockAsync(string domain, bool locked, CancellationToken ct)
     {
-        var cartId = await CreateCartAsync($"ows order {domain}", ct);
+        var service = await GetServiceAsync(domain, ct);
+        switch (service.TransferLockStatus)
+        {
+            case "unavailable":
+                throw new ProviderException($"The registry of {domain} has no transfer lock; its auth code alone allows a transfer.");
+            case Locked or "locking" when locked:
+            case Unlocked or "unlocking" when !locked:
+                return;
+        }
+
+        await api.PutAsync($"domain/{Escape(domain)}", new OvhUpdateTransferLock(locked ? Locked : Unlocked), ct);
+    }
+
+    public async Task<string> GetAuthCodeAsync(string domain, CancellationToken ct)
+    {
+        var service = await GetServiceAsync(domain, ct);
+        if (service.TransferLockStatus is Locked or "locking")
+            throw new ProviderException($"{domain} is locked against transfers. Unlock it first, then read the auth code.");
+        if (service.TransferLockStatus == "unlocking")
+            throw new ProviderException($"OVHcloud is still unlocking {domain}. Try again in a few minutes.");
+
+        var code = await api.GetAsync<string>($"domain/{Escape(domain)}/authInfo", ct);
+        return string.IsNullOrWhiteSpace(code)
+            ? throw new ProviderException($"OVHcloud returned no auth code for {domain}. Some registries send it to the domain holder by e-mail instead.")
+            : code;
+    }
+
+    private async Task<OvhDomainService> GetServiceAsync(string domain, CancellationToken ct) =>
+        await api.GetAsync<OvhDomainService>($"domain/{Escape(domain)}", ct)
+        ?? throw new ProviderException($"OVHcloud returned no details for {domain}.");
+
+    private async Task<DomainQuote> QuoteCoreAsync(string domain, string action, string? authCode, bool ownerIsOfLegalAge, CancellationToken ct)
+    {
+        var transfer = action == TransferAction;
+        var cartId = await CreateCartAsync(transfer ? $"ows transfer {domain}" : $"ows order {domain}", ct);
         try
         {
             await api.PostAsync($"order/cart/{Escape(cartId)}/assign", ct);
-            var offer = (await GetOffersAsync(cartId, domain, ct)).FirstOrDefault(o => o.Action == CreateAction && o.Orderable)
-                        ?? throw new ProviderException($"{domain} cannot be registered at OVHcloud right now.");
+            var offer = (await GetOffersAsync(cartId, domain, ct)).FirstOrDefault(o => o.Action == action && o.Orderable)
+                        ?? throw new ProviderException(transfer
+                            ? $"OVHcloud does not accept a transfer of {domain} right now. Check that it is registered, unlocked at its current registrar and older than 60 days."
+                            : $"{domain} cannot be registered at OVHcloud right now.");
             var item = await api.PostAsync<OvhCartItem>(
                 $"order/cart/{Escape(cartId)}/domain", new OvhAddDomain(domain, OneYear, offer.PricingMode), ct);
-            await ConfigureAsync(cartId, item.ItemId, ownerIsOfLegalAge, ct);
+            await ConfigureAsync(cartId, item.ItemId, ownerIsOfLegalAge, authCode, ct);
 
             // GET checkout validates the cart and prices it without creating an order.
             var preview = await api.GetAsync<OvhOrder>($"order/cart/{Escape(cartId)}/checkout", ct)
                           ?? throw new ProviderException("OVHcloud returned no price for the order.");
-            return ToQuote(cartId, domain, preview);
+            return ToQuote(cartId, domain, preview) with { IsTransfer = transfer };
         }
         catch
         {
@@ -144,6 +193,16 @@ internal sealed class OvhDomainRegistrar(OvhApiClient api, string subsidiary) : 
             renewal,
             CanEndAtExpiry: info.CanDeleteAtExpiration ?? true);
 
+        // The transfer lock and state are details too: without them the transfer actions are just not offered.
+        try
+        {
+            if (await api.GetAsync<OvhDomainService>($"domain/{Escape(name)}", ct) is { } service)
+                domain = domain with { TransferLock = ToTransferLock(service.TransferLockStatus), State = ToState(service.State) };
+        }
+        catch (ProviderException)
+        {
+        }
+
         // The price is a detail: without it the domain is still listed. The service's own billing price is the one
         // paid for the current term (often a first-year promotion), so the price comes from the renewal offers.
         try
@@ -170,6 +229,25 @@ internal sealed class OvhDomainRegistrar(OvhApiClient api, string subsidiary) : 
 
         return domain;
     }
+
+    internal static DomainTransferLock ToTransferLock(string? status) => status switch
+    {
+        Locked => DomainTransferLock.Locked,
+        "locking" => DomainTransferLock.Locking,
+        Unlocked => DomainTransferLock.Unlocked,
+        "unlocking" => DomainTransferLock.Unlocking,
+        "unavailable" => DomainTransferLock.NotSupported,
+        _ => DomainTransferLock.Unknown,
+    };
+
+    internal static DomainState ToState(string? state) => state switch
+    {
+        null => DomainState.Unknown,
+        "ok" or "autorenew_in_progress" or "autorenew_registry_in_progress" => DomainState.Active,
+        "pending_incoming_transfer" => DomainState.IncomingTransfer,
+        "outgoing_transfer" => DomainState.OutgoingTransfer,
+        _ => DomainState.Other,
+    };
 
     /// <summary>"P1Y" → 12, "P6M" → 6, anything else → null.</summary>
     internal static int? Months(string? duration)
@@ -210,11 +288,18 @@ internal sealed class OvhDomainRegistrar(OvhApiClient api, string subsidiary) : 
                 Currency(create));
         }
 
-        var note = offers.Any(o => o.Action == "transfer") ? "Registered by someone else." : "Not available at OVHcloud.";
-        return new DomainAvailability(domain, false, false, null, null, offers.Select(Currency).FirstOrDefault(c => c.Length > 0) ?? "", note);
+        var currency = offers.Select(Currency).FirstOrDefault(c => c.Length > 0) ?? "";
+        if (offers.FirstOrDefault(o => o.Action == TransferAction) is { } transfer)
+        {
+            return new DomainAvailability(domain, false, false, null, Price(transfer, "RENEW"), currency, "Registered elsewhere.",
+                Transferable: transfer.Orderable,
+                TransferPrice: transfer.Orderable ? Price(transfer, "TOTAL") ?? Price(transfer, "PRICE") : null);
+        }
+
+        return new DomainAvailability(domain, false, false, null, null, currency, "Not available at OVHcloud.");
     }
 
-    private async Task ConfigureAsync(string cartId, long itemId, bool ownerIsOfLegalAge, CancellationToken ct)
+    private async Task ConfigureAsync(string cartId, long itemId, bool ownerIsOfLegalAge, string? authCode, CancellationToken ct)
     {
         var itemPath = $"order/cart/{Escape(cartId)}/item/{itemId.ToString(CultureInfo.InvariantCulture)}";
         var required = await api.GetAllAsync<OvhRequiredConfiguration>($"{itemPath}/requiredConfiguration", ct);
@@ -222,6 +307,7 @@ internal sealed class OvhDomainRegistrar(OvhApiClient api, string subsidiary) : 
         // Registry-specific data (claims notices, protected codes, local presence, ...) cannot be asked for generically.
         var unsupported = required
             .Where(c => c.Required == true && c.Label != LegalAge && !DefaultedConfigurations.Contains(c.Label))
+            .Where(c => authCode is null || c.Label != AuthInfo)
             .Select(c => c.Label)
             .ToList();
         if (unsupported.Count > 0)
@@ -233,6 +319,10 @@ internal sealed class OvhDomainRegistrar(OvhApiClient api, string subsidiary) : 
 
         if (required.Any(c => c.Label == LegalAge))
             await api.PostAsync($"{itemPath}/configuration", new OvhItemConfiguration(LegalAge, ownerIsOfLegalAge ? "true" : "false"), ct);
+
+        // Extensions without auth codes (e.g. .uk, which moves by registrar tag) do not ask for one.
+        if (authCode is not null && required.Any(c => c.Label == AuthInfo))
+            await api.PostAsync($"{itemPath}/configuration", new OvhItemConfiguration(AuthInfo, authCode), ct);
     }
 
     private Task<List<OvhDomainOffer>> GetOffersAsync(string cartId, string domain, CancellationToken ct) =>
