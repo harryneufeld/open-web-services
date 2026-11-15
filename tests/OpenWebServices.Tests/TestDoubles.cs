@@ -265,8 +265,16 @@ internal sealed class FakeDomainRegistrar : IDomainRegistrar
         return Task.FromResult(new PlacedDomainOrder("1234", "https://registrar.example/pay/1234", 11.89m, "EUR", options.PayWithDefaultMethod));
     }
 
+    public List<(string Domain, bool EndAtExpiry)> Cancellations { get; } = [];
+
     public Task<IReadOnlyList<RegisteredDomain>> ListDomainsAsync(CancellationToken ct) =>
         Task.FromResult<IReadOnlyList<RegisteredDomain>>([new RegisteredDomain("mine.com")]);
+
+    public Task SetEndAtExpiryAsync(string domain, bool endAtExpiry, CancellationToken ct)
+    {
+        Cancellations.Add((domain, endAtExpiry));
+        return Task.CompletedTask;
+    }
 }
 
 internal sealed class FakeLabelProvider : IServerLabelProvider

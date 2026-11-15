@@ -1,5 +1,6 @@
 @page "/domains"
 @rendermode InteractiveServer
+@using System.Globalization
 @inject UseCaseRunner Runner
 
 <PageTitle>Domains · ows</PageTitle>
@@ -226,16 +227,93 @@ else
             }
             else
             {
-                <ul class="list">
-                    @foreach (var (group, domain) in Paging.Slice(all, _page))
-                    {
-                        <li>
-                            <span class="grow"><strong class="mono">@domain.Name</strong></span>
-                            <a class="subtle" href="/groups/@group.GroupId">@group.GroupName</a>
-                        </li>
-                    }
-                </ul>
+                <div class="table-wrap">
+                    <table class="stack">
+                        <thead><tr><th>Domain</th><th>Group</th><th>Registered</th><th>Expires</th><th>Renewal</th><th class="num">Per year, net</th><th><span class="sr-only">Actions</span></th></tr></thead>
+                        <tbody>
+                            @foreach (var (group, domain) in Paging.Slice(all, _page))
+                            {
+                                var key = Key(group, domain);
+                                var ending = domain.Renewal == DomainRenewal.EndsAtExpiry;
+                                <tr>
+                                    <td class="mono"><strong>@domain.Name</strong>@if (domain.Note is { } note)
+                                        {
+                                            <span class="subtle" title="@note"> · details unavailable</span>
+                                        }</td>
+                                    <td data-label="Group"><a class="subtle" href="/groups/@group.GroupId">@group.GroupName</a></td>
+                                    <td data-label="Registered">@Date(domain.RegisteredOn)</td>
+                                    <td data-label="Expires">
+                                        @Date(domain.ExpiresOn)
+                                        @if (DaysLeft(domain) is { } days and <= ExpirySoonDays)
+                                        {
+                                            <span class="subtle"> · @(days <= 0 ? "today" : days == 1 ? "in 1 day" : $"in {days} days")</span>
+                                        }
+                                    </td>
+                                    <td data-label="Renewal">
+                                        @switch (domain.Renewal)
+                                        {
+                                            case DomainRenewal.Automatic:
+                                                <StatusBadge Text="ok" Display="Automatic" />
+                                                break;
+                                            case DomainRenewal.Manual:
+                                                <StatusBadge Text="warn" Display="Manual" />
+                                                break;
+                                            case DomainRenewal.EndsAtExpiry:
+                                                <StatusBadge Text="error" Display="Cancelled" />
+                                                break;
+                                            default:
+                                                <span class="subtle">–</span>
+                                                break;
+                                        }
+                                    </td>
+                                    <td data-label="Per year" class="num">@(domain.YearlyPrice is { } yearly ? Formatting.Money(yearly, domain.Currency) : "–")</td>
+                                    <td class="actions">
+                                        @if (_canOrder && domain.Renewal != DomainRenewal.Unknown && _confirmCancel == key)
+                                        {
+                                            <button class="btn btn-sm" disabled="@_busy" @onclick="() => _confirmCancel = null">Keep</button>
+                                            <button class="btn btn-sm btn-danger-solid" disabled="@_busy" @onclick="() => SetCancellationAsync(group, domain, true)">
+                                                @if (_busy)
+                                                {
+                                                    <span class="spinner"></span>
+                                                }
+                                                Cancel at expiry
+                                            </button>
+                                        }
+                                        else if (_canOrder && ending)
+                                        {
+                                            <button class="btn btn-sm" disabled="@_busy" @onclick="() => SetCancellationAsync(group, domain, false)">Undo cancellation</button>
+                                        }
+                                        else if (_canOrder && domain.Renewal != DomainRenewal.Unknown && domain.CanEndAtExpiry)
+                                        {
+                                            <button class="btn btn-sm btn-danger" disabled="@_busy" @onclick="() => _confirmCancel = key">Cancel…</button>
+                                        }
+                                    </td>
+                                </tr>
+                                @if (_confirmCancel == key)
+                                {
+                                    <tr>
+                                        <td colspan="7" class="hint">
+                                            @domain.Name stays registered and working until @Date(domain.ExpiresOn), then it is released and anyone can register it.
+                                            The registrar does not refund the remaining term. You can undo this until it expires.
+                                        </td>
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
                 <Pager Total="all.Count" @bind-Page="_page" Label="Domain pages" />
+                @if (YearlyTotals(all) is { Count: > 0 } totals)
+                {
+                    <div class="panel-body">
+                        <p class="hint">Renewing domains cost @string.Join(" + ", totals.Select(t => Formatting.Money(t.Amount, t.Currency))) per year, net.
+                            @if (!_canOrder)
+                            {
+                                <text>Cancelling domains needs the Admin role in this tenant.</text>
+                            }
+                        </p>
+                    </div>
+                }
             }
         }
     </section>
@@ -250,6 +328,7 @@ else
     private DomainQuote? _quote;
     private PlacedDomainOrder? _placed;
     private string? _error;
+    private string? _confirmCancel;
     private string _query = "";
     private int _page = 1;
     private bool _canOrder;
@@ -319,6 +398,29 @@ else
             _searching = false;
         }
     }
+
+    private const int ExpirySoonDays = 60;
+
+    private static string Key(GroupDomains group, RegisteredDomain domain) => $"{group.GroupId}/{domain.Name}";
+
+    private static string Date(DateOnly? date) => date?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) ?? "–";
+
+    private static int? DaysLeft(RegisteredDomain domain) =>
+        domain.ExpiresOn is { } expires ? expires.DayNumber - DateOnly.FromDateTime(DateTime.UtcNow).DayNumber : null;
+
+    /// <summary>Yearly renewal cost of the domains that are not cancelled, per currency.</summary>
+    private static IReadOnlyList<(decimal Amount, string Currency)> YearlyTotals(IEnumerable<(GroupDomains Group, RegisteredDomain Domain)> all) =>
+        [.. all.Select(x => x.Domain)
+            .Where(d => d.Renewal != DomainRenewal.EndsAtExpiry && d.YearlyPrice is not null)
+            .GroupBy(d => d.Currency)
+            .Select(g => (g.Sum(d => d.YearlyPrice!.Value), g.Key))];
+
+    private Task SetCancellationAsync(GroupDomains group, RegisteredDomain domain, bool endAtExpiry) => RunAsync(async () =>
+    {
+        await Runner.RunAsync<ChangeDomainCancellation>(u => u.ExecuteAsync(group.GroupId, domain.Name, endAtExpiry, CancellationToken.None));
+        _confirmCancel = null;
+        await LoadRegisteredAsync();
+    });
 
     private void StartOrder(DomainAvailability candidate)
     {

@@ -46,7 +46,41 @@ public sealed record DomainOrderOptions(bool PayWithDefaultMethod, bool WaiveWit
 /// <param name="PaymentUrl">Where the order can be paid, when it was not paid automatically.</param>
 public sealed record PlacedDomainOrder(string OrderId, string? PaymentUrl, decimal TotalGross, string Currency, bool PaidAutomatically);
 
-public sealed record RegisteredDomain(string Name);
+/// <summary>What happens to a registered domain when its current term ends.</summary>
+public enum DomainRenewal
+{
+    /// <summary>The registrar did not say.</summary>
+    Unknown,
+
+    /// <summary>Renewed and charged automatically.</summary>
+    Automatic,
+
+    /// <summary>Renewed only when someone pays the renewal.</summary>
+    Manual,
+
+    /// <summary>Cancelled: the registration ends at expiry and the name is released.</summary>
+    EndsAtExpiry,
+}
+
+/// <summary>A domain the account holds. Details the registrar could not provide stay null and <see cref="Note"/> says why.</summary>
+/// <param name="RegisteredOn">When the domain was first registered.</param>
+/// <param name="ExpiresOn">End of the paid term.</param>
+/// <param name="RenewalPrice">Net price of one renewal, covering <see cref="RenewalMonths"/>.</param>
+/// <param name="CanEndAtExpiry">The registrar accepts a cancellation at expiry right now.</param>
+public sealed record RegisteredDomain(
+    string Name,
+    DateOnly? RegisteredOn = null,
+    DateOnly? ExpiresOn = null,
+    DomainRenewal Renewal = DomainRenewal.Unknown,
+    decimal? RenewalPrice = null,
+    int? RenewalMonths = null,
+    string Currency = "",
+    bool CanEndAtExpiry = false,
+    string? Note = null)
+{
+    /// <summary>The renewal price for twelve months, or null when it is unknown.</summary>
+    public decimal? YearlyPrice => RenewalPrice is { } price && RenewalMonths is > 0 and var months ? price * 12m / months : null;
+}
 
 /// <summary>A registrar: searches, prices and orders domain names, and lists those the account holds.</summary>
 public interface IDomainRegistrar
@@ -58,5 +92,12 @@ public interface IDomainRegistrar
 
     Task<PlacedDomainOrder> PlaceOrderAsync(string quoteId, DomainOrderOptions options, CancellationToken ct);
 
+    /// <summary>Domains the account holds, with their dates, renewal mode and renewal price where available.</summary>
     Task<IReadOnlyList<RegisteredDomain>> ListDomainsAsync(CancellationToken ct);
+
+    /// <summary>
+    /// Cancels a domain at the end of its paid term (<paramref name="endAtExpiry"/> true), or withdraws that
+    /// cancellation so it renews again. Nothing is refunded; until expiry the domain keeps working.
+    /// </summary>
+    Task SetEndAtExpiryAsync(string domain, bool endAtExpiry, CancellationToken ct);
 }
