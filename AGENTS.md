@@ -29,6 +29,6 @@ described in `README.md`; product context in `PRODUCT.md`; visual identity in `d
 - Dependencies point inward: Web → Infrastructure → Application → Domain. Domain has no dependencies.
 - Warnings are errors (`Directory.Build.props`). Keep the build clean.
 - Provider specifics live only in Infrastructure behind `IProviderConnector`, `IServerProvider` and `IDnsProvider`.
-- UI: reuse the components in `Components/Shared` and the tokens in `wwwroot/app.css`; follow `docs/brand.md`.
+- UI: reuse the components in `Components/Shared` and the tokens in `wwwroot/app.css`; follow `docs/brand.md` and the interface rules in `docs/design.md`.
 - Never commit secrets, hostnames or personal details. Machine-specific notes belong in `CLAUDE.local.md`
   (git-ignored).
