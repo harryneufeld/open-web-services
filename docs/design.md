@@ -37,6 +37,17 @@ adapted to a calm developer console.
 - Row actions sit right-aligned in the last column (`td.actions` or the grid's action column). Destructive actions ask
   for confirmation in place ("Delete" → "Cancel / Delete").
 
+## Loading: the page comes first, the data follows
+
+- A click opens the new page at once. Never make the user wait on the old page while data loads.
+- Interactive pages load their data only when interactive (`if (!RendererInfo.IsInteractive) return;` at the top
+  of `OnInitializedAsync`). The prerender then contains only the page frame and its placeholders, so it is instant,
+  and the data loads once, not twice.
+- The page header (`h1`, breadcrumb) renders before the data. Where the title is the entity's name, use
+  `<SkeletonHeader />`; lists and panels use `<SkeletonRows />` in the shape of the content they stand in for.
+- `js/navigation.js` marks the clicked link and runs a thin bar along the top until the next page has arrived. It
+  needs nothing per page.
+
 ## Density and type
 
 - Dense, scannable: 8 / 12 / 16 px spacing steps inside panels; 20–24 px between panels.

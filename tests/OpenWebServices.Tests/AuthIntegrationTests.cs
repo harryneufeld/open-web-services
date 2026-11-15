@@ -251,8 +251,9 @@ public sealed partial class AuthIntegrationTests : IDisposable
 
         var admin = await (await invited.GetAsync("/admin")).Content.ReadAsStringAsync();
 
+        // The page prerenders its frame only; the query refusal itself is covered in TenantTests.
+        Assert.Contains("<h1>Platform admin</h1>", admin, StringComparison.Ordinal);
         Assert.DoesNotContain(">admin <", admin, StringComparison.Ordinal);
-        Assert.Contains("needs an ows admin", admin, StringComparison.Ordinal);
     }
 
     private HttpClient NewClient() =>

@@ -11,6 +11,7 @@
 
 @if (_view is null)
 {
+    <SkeletonHeader />
     <section class="panel"><SkeletonRows Count="2" /></section>
 }
 else
@@ -162,6 +163,8 @@ else
 
     protected override async Task OnInitializedAsync()
     {
+        if (!RendererInfo.IsInteractive)
+            return; // prerendering only shows the skeleton; data loads once, when the page is interactive
         await LoadAsync();
         if (_view is not null)
             (_name, _enabled, _showCommitmentOffers) = (_view.Group.Name, _view.Group.EnabledResources, _view.Group.ShowCommitmentOffers);

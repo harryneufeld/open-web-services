@@ -260,7 +260,8 @@ else
     private bool _payNow;
     private bool _waiveWithdrawal;
 
-    protected override Task OnInitializedAsync() => LoadAsync();
+    // Prerendering only shows the skeleton; data loads once, when the page is interactive.
+    protected override Task OnInitializedAsync() => RendererInfo.IsInteractive ? LoadAsync() : Task.CompletedTask;
 
     private async Task LoadAsync()
     {

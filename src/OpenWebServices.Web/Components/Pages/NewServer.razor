@@ -278,6 +278,8 @@ else
 
     protected override async Task OnInitializedAsync()
     {
+        if (!RendererInfo.IsInteractive)
+            return; // prerendering only shows the skeleton; data loads once, when the page is interactive
         try
         {
             var result = await Runner.RunAsync<GetServerOffers, OffersResult>(q => q.ExecuteAsync(CancellationToken.None));
