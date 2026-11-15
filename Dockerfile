@@ -13,7 +13,8 @@ WORKDIR /src
 
 COPY . .
 # Docker names the architectures amd64/arm64, .NET names them x64/arm64.
-RUN --mount=type=cache,target=/root/.nuget/packages \
+# sharing=locked: the amd64 and arm64 builds run in parallel and would otherwise corrupt the shared NuGet cache.
+RUN --mount=type=cache,target=/root/.nuget/packages,sharing=locked \
     case "$TARGETARCH" in amd64) RID=x64 ;; arm64) RID=arm64 ;; *) echo "unsupported: $TARGETARCH" >&2; exit 1 ;; esac \
     && dotnet publish src/OpenWebServices.Web/OpenWebServices.Web.csproj \
         -c Release \
