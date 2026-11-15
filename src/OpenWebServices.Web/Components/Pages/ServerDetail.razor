@@ -12,6 +12,7 @@
 
 @if (_view is null)
 {
+    <SkeletonHeader />
     @if (_error is not null)
     {
         <Notice Kind="error">@_error</Notice>
@@ -164,6 +165,8 @@ else
 
     protected override async Task OnInitializedAsync()
     {
+        if (!RendererInfo.IsInteractive)
+            return; // prerendering only shows the skeleton; data loads once, when the page is interactive
         _templateId = Templates.All[0].Id;
         await LoadAsync();
     }

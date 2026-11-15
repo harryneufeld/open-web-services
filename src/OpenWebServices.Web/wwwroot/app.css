@@ -372,6 +372,17 @@ input[type=checkbox] { width: 16px; height: 16px; margin: 0; accent-color: var(-
 .skeleton-row:last-child { border-bottom: 0; }
 .skeleton-bar { height: 10px; border-radius: 4px; background: linear-gradient(90deg, var(--surface-2) 0%, var(--surface-hover) 50%, var(--surface-2) 100%); background-size: 200% 100%; animation: shimmer 1.4s ease-in-out infinite; }
 @keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+.skeleton-header > div { gap: 10px; }
+.skeleton-title { width: min(260px, 60%); height: 20px; }
+.skeleton-line { width: min(360px, 80%); }
+
+/* ---------- Navigation feedback (js/navigation.js) ---------- */
+
+body::before { content: ""; position: fixed; inset: 0 0 auto 0; height: 2px; z-index: 50; pointer-events: none; background: var(--accent); transform-origin: left; transform: scaleX(0); opacity: 0; transition: opacity 0.2s ease; }
+.is-navigating body::before { opacity: 1; animation: nav-progress 6s cubic-bezier(0.1, 0.7, 0.2, 1) forwards; }
+@keyframes nav-progress { from { transform: scaleX(0.08); } to { transform: scaleX(0.92); } }
+.nav a.is-pending, .tabbar a.is-pending { background: var(--surface-hover); color: var(--text); }
+.is-navigating .main { cursor: progress; }
 
 /* ---------- Lists inside panels ---------- */
 
@@ -412,6 +423,7 @@ details.log pre { margin: 0; padding: 12px 16px; max-height: 360px; overflow: au
     *, *::before, *::after { transition-duration: 0.01ms !important; }
     .spinner { animation-duration: 2s; }
     .skeleton-bar { animation: none; }
+    .is-navigating body::before { animation: none; transform: scaleX(0.4); }
 }
 
 .attention-danger { color: var(--danger); }

@@ -24,6 +24,8 @@
 
     protected override void OnInitialized()
     {
+        if (!RendererInfo.IsInteractive)
+            return; // nothing to refresh while prerendering
         Notifier.Changed += Handle;
         _ = PollAsync();
     }

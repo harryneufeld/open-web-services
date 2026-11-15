@@ -167,6 +167,8 @@ else
     protected override async Task OnInitializedAsync()
     {
         _myId = Sessions.UserId((await AuthenticationState).User);
+        if (!RendererInfo.IsInteractive)
+            return; // prerendering only shows the skeleton; data loads once, when the page is interactive
         await LoadAsync();
     }
 
