@@ -121,6 +121,9 @@ read-only; ows does not overwrite it.
 Placing an order creates an OVHcloud order on the account. Unless "Pay now" is ticked it waits for payment in the
 OVHcloud Control Panel.
 
+OVHcloud refuses API availability checks for some extensions with `400 ... check failed` (seen for .com and .eu,
+while .de works); such names are shown with a pointer to the Control Panel instead of a result.
+
 `GET /domain/zone/*` also covers `/domain/zone/{zone}/record` and `/domain/zone/{zone}/record/{id}`.
 
 ## Not needed

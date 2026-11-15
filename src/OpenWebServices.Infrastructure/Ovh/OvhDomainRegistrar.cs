@@ -22,13 +22,17 @@ internal sealed class OvhDomainRegistrar(OvhApiClient api, string subsidiary) : 
 
     private const string LegalAge = "OWNER_LEGAL_AGE";
 
+    /// <summary>
+    /// OVHcloud's answer when it will not check an extension through the API (seen for .com and .eu, while .de works);
+    /// the same names can be checked in its Control Panel, so the request itself is fine.
+    /// </summary>
+    private const string RefusedCheck = "check failed";
+
     public async Task<IReadOnlyList<DomainAvailability>> CheckAsync(IReadOnlyList<string> domains, CancellationToken ct)
     {
         var cartId = await CreateCartAsync("ows domain search", ct);
         try
         {
-            // OVHcloud rejects availability checks on carts not assigned to an account ("check failed").
-            await api.PostAsync($"order/cart/{Escape(cartId)}/assign", ct);
             var results = new DomainAvailability[domains.Count];
             await Parallel.ForEachAsync(
                 Enumerable.Range(0, domains.Count),
@@ -92,6 +96,11 @@ internal sealed class OvhDomainRegistrar(OvhApiClient api, string subsidiary) : 
         try
         {
             offers = await GetOffersAsync(cartId, domain, ct);
+        }
+        catch (ProviderException ex) when (ex.Message.EndsWith(RefusedCheck, StringComparison.Ordinal))
+        {
+            return new DomainAvailability(domain, false, false, null, null, "",
+                "OVHcloud does not check this extension through its API. Look it up in the OVHcloud Control Panel.");
         }
         catch (ProviderException ex)
         {

@@ -96,7 +96,6 @@ public class DomainTests
     {
         var handler = new OvhHandler();
         handler.Responses["POST order/cart"] = """{"cartId":"c1"}""";
-        handler.Responses["POST order/cart/c1/assign"] = "null";
         handler.Responses["GET order/cart/c1/domain?domain=free.com"] = """
             [{"action":"create","orderable":true,"pricingMode":"create-default","prices":[
               {"label":"PRICE","price":{"value":10.49,"currencyCode":"EUR","text":"10.49 €"}},
@@ -113,8 +112,22 @@ public class DomainTests
         Assert.Equal(12.99m, results[0].RenewalPrice);
         Assert.False(results[1].Available);
         Assert.Equal("Registered by someone else.", results[1].Note);
-        Assert.Contains("POST order/cart/c1/assign", handler.Requested);
         Assert.Contains("DELETE order/cart/c1", handler.Requested);
+    }
+
+    [Fact]
+    public async Task Ovh_search_explains_extensions_ovh_refuses_to_check()
+    {
+        var handler = new OvhHandler();
+        handler.Responses["POST order/cart"] = """{"cartId":"c1"}""";
+        handler.BadRequests["GET order/cart/c1/domain?domain=name.com"] = "Some parameters are invalid in the request: check failed";
+        handler.BadRequests["GET order/cart/c1/domain?domain=name.net"] = "Something else";
+
+        var results = await NewRegistrar(handler).CheckAsync(["name.com", "name.net"], CancellationToken.None);
+
+        Assert.False(results[0].Available);
+        Assert.Equal("OVHcloud does not check this extension through its API. Look it up in the OVHcloud Control Panel.", results[0].Note);
+        Assert.StartsWith("OVHcloud cannot check this name:", results[1].Note);
     }
 
     [Fact]
@@ -166,6 +179,8 @@ public class DomainTests
     private sealed class OvhHandler : HttpMessageHandler
     {
         public Dictionary<string, string> Responses { get; } = [];
+        /// <summary>Keys answered with 400 and the given OVH error message.</summary>
+        public Dictionary<string, string> BadRequests { get; } = [];
         public List<string> Requested { get; } = [];
         public List<string> Bodies { get; } = [];
 
@@ -180,6 +195,14 @@ public class DomainTests
             }
 
             await Task.Yield();
+            if (BadRequests.TryGetValue(key, out var message))
+            {
+                return new HttpResponseMessage(HttpStatusCode.BadRequest)
+                {
+                    Content = new StringContent($$"""{"message":"{{message}}"}""", Encoding.UTF8, "application/json"),
+                };
+            }
+
             var body = key == "GET auth/time" ? "1700000000"
                 : Responses.TryGetValue(key, out var configured) ? configured
                 : request.Method == HttpMethod.Delete ? "null"
