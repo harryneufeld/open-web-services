@@ -39,37 +39,49 @@
                 <div><dt>Public IPv6</dt><dd class="mono">@(net.PublicIpv6 ?? "–")</dd></div>
             </dl>
 
-            <div class="subsection">
+            <div class="field-group">
                 <h3>Reverse DNS</h3>
                 @if (!net.CanEditReverseDns && net.ReverseDns.Count == 0)
                 {
                     <p class="hint">This provider's reverse DNS is not managed in ows. Change it in the provider's console.</p>
                 }
-                else
+                @foreach (var entry in net.ReverseDns)
                 {
-                    @foreach (var entry in net.ReverseDns)
-                    {
+                    <div class="inline-form">
+                        <label class="field"><span>Address</span><input class="mono" value="@entry.Ip" readonly tabindex="-1" /></label>
+                        <label class="field"><span>Host name</span>
+                            <input class="mono" value="@Draft(entry)" @oninput="e => _ptrDrafts[entry.Ip] = e.Value?.ToString() ?? string.Empty"
+                                   placeholder="Provider default" spellcheck="false" readonly="@(!net.CanEditReverseDns)" />
+                        </label>
+                        @if (net.CanEditReverseDns)
+                        {
+                            <div class="row-actions">
+                                @if (IsChanged(entry))
+                                {
+                                    <button class="btn btn-ghost" disabled="@_busy" @onclick="() => _ptrDrafts.Remove(entry.Ip)">Undo</button>
+                                    <button class="btn btn-primary" disabled="@_busy" @onclick="() => SavePtrAsync(entry)">Save</button>
+                                }
+                            </div>
+                        }
+                    </div>
+                }
+                @if (net.CanEditReverseDns && net.PublicIpv6 is not null)
+                {
+                    <div class="field-group-add">
+                        <h4>Add an IPv6 address</h4>
                         <div class="inline-form">
-                            <label class="field"><span>Address</span><input class="mono" value="@entry.Ip" readonly /></label>
-                            <label class="field"><span>Host name</span>
-                                <input class="mono" value="@Draft(entry)" @oninput="e => _ptrDrafts[entry.Ip] = e.Value?.ToString() ?? string.Empty"
-                                       placeholder="mail.example.com" spellcheck="false" readonly="@(!net.CanEditReverseDns)" />
-                            </label>
-                            @if (net.CanEditReverseDns)
-                            {
-                                <button class="btn" disabled="@(_busy || !IsChanged(entry))" @onclick="() => SavePtrAsync(entry)">Save</button>
-                            }
+                            <label class="field"><span>IPv6 address</span><input class="mono" @bind="_newPtrIp" @bind:event="oninput" spellcheck="false" /></label>
+                            <label class="field"><span>Host name</span><input class="mono" @bind="_newPtrValue" @bind:event="oninput" placeholder="mail.example.com" spellcheck="false" /></label>
+                            <div class="row-actions">
+                                <button class="btn" disabled="@_busy" @onclick="AddPtrAsync"><Icon Name="plus" />Add</button>
+                            </div>
                         </div>
-                    }
-                    @if (net.CanEditReverseDns && net.PublicIpv6 is not null)
-                    {
-                        <div class="inline-form">
-                            <label class="field"><span>Another IPv6 address</span><input class="mono" @bind="_newPtrIp" placeholder="@Ipv6Example(net.PublicIpv6)" spellcheck="false" /></label>
-                            <label class="field"><span>Host name</span><input class="mono" @bind="_newPtrValue" placeholder="mail.example.com" spellcheck="false" /></label>
-                            <button class="btn" disabled="@(_busy || string.IsNullOrWhiteSpace(_newPtrIp) || string.IsNullOrWhiteSpace(_newPtrValue))" @onclick="AddPtrAsync"><Icon Name="plus" />Set reverse DNS</button>
-                        </div>
-                        <p class="hint">Each address of the server's IPv6 network can have its own host name. Clear a host name and save to reset it to the provider default.</p>
-                    }
+                        @if (_addPtrHint is not null)
+                        {
+                            <p class="field-error">@_addPtrHint</p>
+                        }
+                        <p class="hint">Every address in the server's IPv6 network (@net.PublicIpv6) can have its own host name. To reset a host name, clear it above and save.</p>
+                    </div>
                 }
             </div>
 
@@ -143,6 +155,7 @@
     private bool _busy;
     private readonly Dictionary<string, string> _ptrDrafts = [];
     private string _newPtrIp = "";
+    private string? _addPtrHint;
     private string _newPtrValue = "";
     private string? _confirmDetach;
     private string _joinNetworkId = "";
@@ -159,6 +172,9 @@
         try
         {
             _view = await Runner.RunAsync<ServerNetworks, ServerNetworkView>(u => u.GetAsync(ServerId, CancellationToken.None));
+            // The first address of the server's IPv6 network is the usual one to name.
+            if (_newPtrIp.Length == 0 && _view.Networking?.PublicIpv6 is { } prefix)
+                _newPtrIp = Ipv6Example(prefix);
         }
         catch (Exception ex) when (UserFacingErrors.Matches(ex))
         {
@@ -184,11 +200,20 @@
         _ptrDrafts.Remove(entry.Ip);
     });
 
-    private Task AddPtrAsync() => RunAsync(async () =>
+    private Task AddPtrAsync()
     {
-        await Runner.RunAsync<ServerNetworks>(u => u.SetReverseDnsAsync(ServerId, _newPtrIp, _newPtrValue, CancellationToken.None));
-        (_newPtrIp, _newPtrValue) = ("", "");
-    });
+        _addPtrHint = string.IsNullOrWhiteSpace(_newPtrIp) ? "Enter an IPv6 address."
+            : string.IsNullOrWhiteSpace(_newPtrValue) ? "Enter the host name the address should resolve to."
+            : null;
+        if (_addPtrHint is not null)
+            return Task.CompletedTask;
+
+        return RunAsync(async () =>
+        {
+            await Runner.RunAsync<ServerNetworks>(u => u.SetReverseDnsAsync(ServerId, _newPtrIp, _newPtrValue, CancellationToken.None));
+            (_newPtrIp, _newPtrValue, _addPtrHint) = ("", "", null);
+        });
+    }
 
     private Task JoinAsync() => RunAsync(async () =>
     {
