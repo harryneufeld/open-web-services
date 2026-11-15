@@ -1,15 +1,51 @@
-# Local development database: `docker compose up -d db`
+# Open Web Services with its PostgreSQL database.
+#
+#   Run the published image:   cp .env.example .env   (set POSTGRES_PASSWORD), then
+#                              docker compose pull && docker compose up -d
+#   Build from source:         docker compose up -d --build
+#   Database only (dotnet run): docker compose up -d db
+#
+# The app is then at http://<host>:8080. Migrations run at startup.
+# Put a TLS reverse proxy in front for internet use and set OWS_INSECURE_COOKIE=false.
+name: open-web-services
+
 services:
   db:
     image: postgres:17
     restart: unless-stopped
     environment:
       POSTGRES_USER: ows
-      POSTGRES_PASSWORD: ows
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ows}
       POSTGRES_DB: ows
     ports:
+      # Localhost only, so `dotnet run` can reach it. Remove this line to keep the database inside Docker.
       - "127.0.0.1:5432:5432"
     volumes:
       - dbdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ows -d ows"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  app:
+    image: ${OWS_IMAGE:-ghcr.io/harryneufeld/open-web-services:latest}
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      ConnectionStrings__Default: Host=db;Port=5432;Database=ows;Username=ows;Password=${POSTGRES_PASSWORD:-ows}
+      # The auth cookie is HTTPS-only unless this is true. Keep true for plain-HTTP use on a trusted LAN,
+      # set false when a TLS reverse proxy serves the app.
+      Authentication__AllowInsecureCookie: ${OWS_INSECURE_COOKIE:-true}
+    ports:
+      - "${OWS_PORT:-8080}:8080"
+    volumes:
+      # Data Protection keys: they encrypt stored API tokens and SSH keys. Losing this volume makes them unreadable.
+      - appkeys:/var/lib/open-web-services/keys
+
 volumes:
   dbdata:
+  appkeys:

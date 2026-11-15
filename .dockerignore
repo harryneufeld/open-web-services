@@ -1,0 +1,17 @@
+# Keep the build context small. .git stays: Nerdbank.GitVersioning needs the history.
+**/bin
+**/obj
+**/.vs
+**/.idea
+artifacts
+docs
+tests
+deploy
+.env
+.env.*
+!.env.example
+CLAUDE.local.md
+Dockerfile
+docker-compose.yml
+**/*.user
+**/node_modules
