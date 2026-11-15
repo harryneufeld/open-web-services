@@ -27,6 +27,8 @@ internal sealed class OvhDomainRegistrar(OvhApiClient api, string subsidiary) : 
         var cartId = await CreateCartAsync("ows domain search", ct);
         try
         {
+            // OVHcloud rejects availability checks on carts not assigned to an account ("check failed").
+            await api.PostAsync($"order/cart/{Escape(cartId)}/assign", ct);
             var results = new DomainAvailability[domains.Count];
             await Parallel.ForEachAsync(
                 Enumerable.Range(0, domains.Count),
