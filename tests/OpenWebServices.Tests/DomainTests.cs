@@ -126,7 +126,7 @@ public class DomainTests
         var results = await NewRegistrar(handler).CheckAsync(["name.com", "name.net"], CancellationToken.None);
 
         Assert.False(results[0].Available);
-        Assert.Equal("OVHcloud does not check this extension through its API. Look it up in the OVHcloud Control Panel.", results[0].Note);
+        Assert.Equal("OVHcloud refused to check this name right now, possibly after repeated checks. Try again later or look it up in the OVHcloud Control Panel.", results[0].Note);
         Assert.StartsWith("OVHcloud cannot check this name:", results[1].Note);
     }
 
