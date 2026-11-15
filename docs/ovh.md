@@ -113,8 +113,8 @@ read-only; ows does not overwrite it.
 | Method | Route                     | Used for                                            |
 | ------ | ------------------------- | --------------------------------------------------- |
 | GET    | `/domain`                 | Listing registered domains                          |
-| GET    | `/domain/*`               | Registration and expiry dates, renewal mode (`/domain/{domain}/serviceInfos`) |
-| PUT    | `/domain/*`               | Cancelling a domain at expiry and undoing it (`/domain/{domain}/serviceInfos`) |
+| GET    | `/domain/*`               | Registration and expiry dates, renewal mode (`/domain/{domain}/serviceInfos`); state and transfer lock (`/domain/{domain}`); auth code (`/domain/{domain}/authInfo`) |
+| PUT    | `/domain/*`               | Cancelling a domain at expiry and undoing it (`/domain/{domain}/serviceInfos`); locking and unlocking transfers (`/domain/{domain}`) |
 | GET    | `/service/*`              | Renewal price (`/service/{id}/renew`)               |
 | POST   | `/order/cart`             | Creating a cart for a search or an order            |
 | POST   | `/order/cart/*`           | Assigning the cart, adding the domain, configuring it, placing the order |
@@ -126,6 +126,20 @@ OVHcloud Control Panel.
 
 Cancelling a domain sets OVHcloud's "delete at expiration" flag: the domain keeps working until the end of its paid
 term and is then released. Nothing is refunded, and undoing the cancellation before expiry clears the flag again.
+
+### Transfers
+
+**To OVHcloud.** A search result that is registered elsewhere offers "Transfer in…" when OVHcloud accepts the
+transfer. ows puts a `transfer` item in an order cart, passes the auth code as the cart item's `AUTH_INFO`
+configuration and shows the checkout price before anything is ordered, the same way as a new registration. The
+domain must be unlocked at its current registrar and, for most extensions, older than 60 days. After payment the
+current registrar may e-mail the holder to confirm; the domain shows as "Arriving" until the registry completes it.
+
+**Away from OVHcloud.** "Transfer out…" on a domain unlocks it (`PUT /domain/{domain}` with
+`transferLockStatus: unlocked`), then reads its auth code (`GET /domain/{domain}/authInfo`), which you enter at the
+new registrar. Unlocking takes a few minutes at the registry. Reading the code is audited; the code itself is not
+stored or logged. Extensions without a transfer lock show "No lock". `.uk` domains move by registrar tag instead of
+an auth code and are not handled by ows.
 
 OVHcloud answers `400 ... check failed` when the same name has been checked several times within minutes. The limit
 is per name and temporary: other names keep working, and the name can be checked again after a while. Such names are

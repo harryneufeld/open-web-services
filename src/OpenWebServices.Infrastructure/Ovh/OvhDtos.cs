@@ -114,6 +114,14 @@ internal sealed record OvhUpdateRenew(bool Automatic, bool DeleteAtExpiration, b
 
 internal sealed record OvhUpdateServiceInfos(OvhUpdateRenew Renew);
 
+// Transfers: the lock and state live on /domain/{name}, the auth code under /domain/{name}/authInfo.
+
+/// <param name="State">domain.DomainStateEnum, e.g. "ok", "pending_incoming_transfer", "outgoing_transfer".</param>
+/// <param name="TransferLockStatus">"locked", "locking", "unlocked", "unlocking" or "unavailable".</param>
+internal sealed record OvhDomainService(string? State, string? TransferLockStatus);
+
+internal sealed record OvhUpdateTransferLock(string TransferLockStatus);
+
 /// <param name="RenewPeriod">ISO 8601 duration one renewal adds, e.g. "P1Y".</param>
 internal sealed record OvhRenewDescription(string? RenewPeriod, List<OvhRenewStrategy>? Strategies);
 

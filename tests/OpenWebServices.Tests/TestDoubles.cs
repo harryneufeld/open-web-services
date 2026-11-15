@@ -275,6 +275,26 @@ internal sealed class FakeDomainRegistrar : IDomainRegistrar
         Cancellations.Add((domain, endAtExpiry));
         return Task.CompletedTask;
     }
+
+    public List<(string Domain, string AuthCode)> TransferQuotes { get; } = [];
+
+    public Task<DomainQuote> QuoteTransferAsync(string domain, string authCode, bool ownerIsOfLegalAge, CancellationToken ct)
+    {
+        TransferQuotes.Add((domain, authCode));
+        return Task.FromResult(new DomainQuote("cart-t", domain, [new DomainQuoteLine($"Transfer {domain}", 8.99m)], 8.99m, 10.70m, "EUR", [], IsTransfer: true));
+    }
+
+    public List<(string Domain, bool Locked)> LockChanges { get; } = [];
+
+    public Task SetTransferLockAsync(string domain, bool locked, CancellationToken ct)
+    {
+        LockChanges.Add((domain, locked));
+        return Task.CompletedTask;
+    }
+
+    public const string AuthCode = "Xy7#pQ2!";
+
+    public Task<string> GetAuthCodeAsync(string domain, CancellationToken ct) => Task.FromResult(AuthCode);
 }
 
 internal sealed class FakeLabelProvider : IServerLabelProvider

@@ -105,4 +105,7 @@ public static class AuditTypes
     public const string DomainOrdered = "domain-ordered";
     public const string DomainCancelled = "domain-cancelled";
     public const string DomainCancellationWithdrawn = "domain-cancellation-withdrawn";
+    public const string DomainTransferOrdered = "domain-transfer-ordered";
+    public const string DomainTransferLockChanged = "domain-transfer-lock-changed";
+    public const string DomainAuthCodeRevealed = "domain-auth-code-revealed";
 }

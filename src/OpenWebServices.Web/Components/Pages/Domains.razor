@@ -85,15 +85,32 @@ else
                                     }
                                     else
                                     {
-                                        <span class="subtle">@(r.Note ?? "Not available")</span>
+                                        <span class="subtle">@(r.Note ?? "Not available")@(r.Transferable ? " Transfer possible." : "")</span>
                                     }
                                 </td>
-                                <td data-label="First year" class="num">@(r.Price is { } p ? Formatting.Money(p, r.Currency) : "–")</td>
+                                <td data-label="First year" class="num">
+                                    @if (r.Price is { } p)
+                                    {
+                                        @Formatting.Money(p, r.Currency)
+                                    }
+                                    else if (r.TransferPrice is { } tp)
+                                    {
+                                        @Formatting.Money(tp, r.Currency)<span class="subtle"> transfer</span>
+                                    }
+                                    else
+                                    {
+                                        <text>–</text>
+                                    }
+                                </td>
                                 <td data-label="Renewal" class="num muted">@(r.RenewalPrice is { } rp ? Formatting.Money(rp, r.Currency) : "–")</td>
                                 <td class="actions">
                                     @if (r.Available && _canOrder)
                                     {
-                                        <button class="btn btn-sm" disabled="@_busy" @onclick="() => StartOrder(r)">Order…</button>
+                                        <button class="btn btn-sm" disabled="@_busy" @onclick="() => StartOrder(r, transfer: false)">Order…</button>
+                                    }
+                                    else if (r.Transferable && _canOrder)
+                                    {
+                                        <button class="btn btn-sm" disabled="@_busy" @onclick="() => StartOrder(r, transfer: true)">Transfer in…</button>
                                     }
                                 </td>
                             </tr>
@@ -101,9 +118,9 @@ else
                     </tbody>
                 </table>
             </div>
-            @if (!_canOrder && _results.Any(r => r.Available))
+            @if (!_canOrder && _results.Any(r => r.Available || r.Transferable))
             {
-                <div class="panel-body"><p class="hint">Ordering domains needs the Admin role in this tenant.</p></div>
+                <div class="panel-body"><p class="hint">Ordering and transferring domains needs the Admin role in this tenant.</p></div>
             }
         }
     </section>
@@ -113,8 +130,16 @@ else
         <section class="panel" aria-labelledby="order">
             <div class="panel-header">
                 <div>
-                    <h2 id="order">Order @candidate.Domain</h2>
-                    <p>Registered for one year at @candidate.GroupName, with the account behind the group as holder and contact. The registrar charges that account.</p>
+                    @if (_transferring)
+                    {
+                        <h2 id="order">Transfer @candidate.Domain</h2>
+                        <p>Moves the domain to @candidate.GroupName, usually with one year added to its term. The account behind the group becomes holder and contact, and the registrar charges that account.</p>
+                    }
+                    else
+                    {
+                        <h2 id="order">Order @candidate.Domain</h2>
+                        <p>Registered for one year at @candidate.GroupName, with the account behind the group as holder and contact. The registrar charges that account.</p>
+                    }
                 </div>
                 <button class="btn btn-ghost btn-sm" @onclick="CloseOrder"><Icon Name="x" /><span class="sr-only">Close</span></button>
             </div>
@@ -129,23 +154,37 @@ else
                     {
                         <p><a class="btn btn-primary" href="@url" target="_blank" rel="noopener noreferrer">Pay the order at the registrar</a></p>
                     }
-                    <p class="hint">Once the registration is complete, the domain's DNS zone appears under DNS after the next sync.</p>
+                    @if (_transferring)
+                    {
+                        <p class="hint">The transfer starts once the order is paid. The current registrar may e-mail the domain holder to confirm it; most transfers complete within a week. Until then the domain keeps working where it is.</p>
+                    }
+                    else
+                    {
+                        <p class="hint">Once the registration is complete, the domain's DNS zone appears under DNS after the next sync.</p>
+                    }
                 </div>
             }
             else if (_quote is not { } quote)
             {
                 <div class="panel-body stack">
+                    @if (_transferring)
+                    {
+                        <label class="field"><span>Auth code</span>
+                            <input @bind="_authCodeInput" @bind:event="oninput" spellcheck="false" autocomplete="off" class="mono" />
+                        </label>
+                        <p class="hint">Also called EPP or transfer code. Ask the current registrar for it and remove the transfer lock there first.</p>
+                    }
                     <label class="check"><input type="checkbox" @bind="_legalAge" />The domain holder is of legal age.</label>
-                    <p class="hint">The next step prepares the order at the registrar and shows the exact total and terms. Nothing is ordered yet.</p>
+                    <p class="hint">The next step prepares the @(_transferring ? "transfer" : "order") at the registrar and shows the exact total and terms. Nothing is ordered yet.</p>
                 </div>
                 <div class="panel-footer">
                     <button class="btn" @onclick="CloseOrder">Cancel</button>
-                    <button class="btn btn-primary" disabled="@(_busy || !_legalAge)" @onclick="QuoteAsync">
+                    <button class="btn btn-primary" disabled="@(_busy || !_legalAge || (_transferring && string.IsNullOrWhiteSpace(_authCodeInput)))" @onclick="QuoteAsync">
                         @if (_busy)
                         {
                             <span class="spinner"></span>
                         }
-                        Review order
+                        @(_transferring ? "Review transfer" : "Review order")
                     </button>
                 </div>
             }
@@ -186,7 +225,7 @@ else
                         {
                             <span class="spinner"></span>
                         }
-                        Place order for @Formatting.Money(quote.TotalGross, quote.Currency)
+                        @(quote.IsTransfer ? "Place transfer order for" : "Place order for") @Formatting.Money(quote.TotalGross, quote.Currency)
                     </button>
                 </div>
             }
@@ -229,7 +268,7 @@ else
             {
                 <div class="table-wrap">
                     <table class="stack">
-                        <thead><tr><th>Domain</th><th>Group</th><th>Registered</th><th>Expires</th><th>Renewal</th><th class="num">Per year, net</th><th><span class="sr-only">Actions</span></th></tr></thead>
+                        <thead><tr><th>Domain</th><th>Group</th><th>Registered</th><th>Expires</th><th>Renewal</th><th>Transfer</th><th class="num">Per year, net</th><th><span class="sr-only">Actions</span></th></tr></thead>
                         <tbody>
                             @foreach (var (group, domain) in Paging.Slice(all, _page))
                             {
@@ -266,8 +305,38 @@ else
                                                 break;
                                         }
                                     </td>
+                                    <td data-label="Transfer">
+                                        @switch (domain.State, domain.TransferLock)
+                                        {
+                                            case (DomainState.IncomingTransfer, _):
+                                                <StatusBadge Text="pending" Display="Arriving" />
+                                                break;
+                                            case (DomainState.OutgoingTransfer, _):
+                                                <StatusBadge Text="pending" Display="Leaving" />
+                                                break;
+                                            case (_, DomainTransferLock.Locked):
+                                                <StatusBadge Text="ok" Display="Locked" />
+                                                break;
+                                            case (_, DomainTransferLock.Unlocked):
+                                                <StatusBadge Text="warn" Display="Unlocked" />
+                                                break;
+                                            case (_, DomainTransferLock.Locking or DomainTransferLock.Unlocking):
+                                                <StatusBadge Text="pending" Display="@(domain.TransferLock == DomainTransferLock.Locking ? "Locking" : "Unlocking")" />
+                                                break;
+                                            case (_, DomainTransferLock.NotSupported):
+                                                <span class="subtle">No lock</span>
+                                                break;
+                                            default:
+                                                <span class="subtle">–</span>
+                                                break;
+                                        }
+                                    </td>
                                     <td data-label="Per year" class="num">@(domain.YearlyPrice is { } yearly ? Formatting.Money(yearly, domain.Currency) : "–")</td>
                                     <td class="actions">
+                                        @if (_canOrder && CanTransferOut(domain) && _confirmCancel != key)
+                                        {
+                                            <button class="btn btn-sm" disabled="@_busy" aria-expanded="@(_transferOut == key)" @onclick="() => ToggleTransferOut(key)">Transfer out…</button>
+                                        }
                                         @if (_canOrder && domain.Renewal != DomainRenewal.Unknown && _confirmCancel == key)
                                         {
                                             <button class="btn btn-sm" disabled="@_busy" @onclick="() => _confirmCancel = null">Keep</button>
@@ -292,9 +361,48 @@ else
                                 @if (_confirmCancel == key)
                                 {
                                     <tr>
-                                        <td colspan="7" class="hint">
+                                        <td colspan="8" class="hint">
                                             @domain.Name stays registered and working until @Date(domain.ExpiresOn), then it is released and anyone can register it.
                                             The registrar does not refund the remaining term. You can undo this until it expires.
+                                        </td>
+                                    </tr>
+                                }
+                                @if (_transferOut == key)
+                                {
+                                    <tr>
+                                        <td colspan="8">
+                                            <div class="stack">
+                                                @switch (domain.TransferLock)
+                                                {
+                                                    case DomainTransferLock.Locked:
+                                                        <p class="hint">To move @domain.Name to another registrar, unlock it here, then read its auth code and enter that code when ordering the transfer at the new registrar. While unlocked, anyone with the code can take the domain over.</p>
+                                                        <p><button class="btn btn-sm btn-primary" disabled="@_busy" @onclick="() => SetTransferLockAsync(group, domain, false)">Unlock for transfer</button></p>
+                                                        break;
+                                                    case DomainTransferLock.Unlocking:
+                                                        <p class="hint">The registry is unlocking @domain.Name; this usually takes a few minutes. Reload to check, then read the auth code.</p>
+                                                        break;
+                                                    case DomainTransferLock.Locking:
+                                                        <p class="hint">The registry is locking @domain.Name again. Reload to check.</p>
+                                                        break;
+                                                    default:
+                                                        <p class="hint">Enter this auth code when ordering the transfer at the new registrar. The current term carries over; the new registrar usually adds a year. Lock the domain again if you change your mind.</p>
+                                                        @if (_authCodes.TryGetValue(key, out var revealedCode))
+                                                        {
+                                                            <p><code class="mono" aria-label="Auth code">@revealedCode</code></p>
+                                                        }
+                                                        <p class="toolbar">
+                                                            @if (!_authCodes.ContainsKey(key))
+                                                            {
+                                                                <button class="btn btn-sm btn-primary" disabled="@_busy" @onclick="() => RevealAuthCodeAsync(group, domain)">Show auth code</button>
+                                                            }
+                                                            @if (domain.TransferLock == DomainTransferLock.Unlocked)
+                                                            {
+                                                                <button class="btn btn-sm" disabled="@_busy" @onclick="() => SetTransferLockAsync(group, domain, true)">Lock again</button>
+                                                            }
+                                                        </p>
+                                                        break;
+                                                }
+                                            </div>
                                         </td>
                                     </tr>
                                 }
@@ -309,7 +417,7 @@ else
                         <p class="hint">Renewing domains cost @string.Join(" + ", totals.Select(t => Formatting.Money(t.Amount, t.Currency))) per year, net.
                             @if (!_canOrder)
                             {
-                                <text>Cancelling domains needs the Admin role in this tenant.</text>
+                                <text>Cancelling and transferring domains needs the Admin role in this tenant.</text>
                             }
                         </p>
                     </div>
@@ -329,6 +437,12 @@ else
     private PlacedDomainOrder? _placed;
     private string? _error;
     private string? _confirmCancel;
+    private string? _transferOut;
+    private string _authCodeInput = "";
+    private bool _transferring;
+
+    /// <summary>Auth codes read in this circuit, by domain key. They are only kept in memory and dropped on reload.</summary>
+    private readonly Dictionary<string, string> _authCodes = [];
     private string _query = "";
     private int _page = 1;
     private bool _canOrder;
@@ -422,21 +536,60 @@ else
         await LoadRegisteredAsync();
     });
 
-    private void StartOrder(DomainAvailability candidate)
+    /// <summary>Transfers need an active domain whose lock state the registrar reported.</summary>
+    private static bool CanTransferOut(RegisteredDomain domain) =>
+        domain.State == DomainState.Active && domain.TransferLock != DomainTransferLock.Unknown;
+
+    private void ToggleTransferOut(string key)
+    {
+        _transferOut = _transferOut == key ? null : key;
+        _authCodes.Remove(key);
+    }
+
+    private Task SetTransferLockAsync(GroupDomains group, RegisteredDomain domain, bool locked) => RunAsync(async () =>
+    {
+        await Runner.RunAsync<ChangeDomainTransferLock>(u => u.ExecuteAsync(group.GroupId, domain.Name, locked, CancellationToken.None));
+        _authCodes.Remove(Key(group, domain));
+        await LoadRegisteredAsync();
+    });
+
+    private Task RevealAuthCodeAsync(GroupDomains group, RegisteredDomain domain) => RunAsync(async () =>
+    {
+        var code = await Runner.RunAsync<RevealDomainAuthCode, string>(u => u.ExecuteAsync(group.GroupId, domain.Name, CancellationToken.None));
+        _authCodes[Key(group, domain)] = code;
+    });
+
+    private void StartOrder(DomainAvailability candidate, bool transfer)
     {
         _ordering = candidate;
+        _transferring = transfer;
         (_quote, _placed) = (null, null);
         (_legalAge, _payNow, _waiveWithdrawal) = (false, false, false);
+        _authCodeInput = "";
         _error = null;
     }
 
-    private void CloseOrder() => (_ordering, _quote, _placed) = (null, null, null);
+    private void CloseOrder()
+    {
+        (_ordering, _quote, _placed) = (null, null, null);
+        _authCodeInput = "";
+    }
 
     private Task QuoteAsync() => RunAsync(async () =>
     {
         var candidate = _ordering!;
-        _quote = await Runner.RunAsync<QuoteDomainOrder, DomainQuote>(u =>
-            u.ExecuteAsync(candidate.GroupId, candidate.Domain, _legalAge, CancellationToken.None));
+        if (_transferring)
+        {
+            var authCode = _authCodeInput;
+            _quote = await Runner.RunAsync<QuoteDomainTransfer, DomainQuote>(u =>
+                u.ExecuteAsync(candidate.GroupId, candidate.Domain, authCode, _legalAge, CancellationToken.None));
+            _authCodeInput = "";
+        }
+        else
+        {
+            _quote = await Runner.RunAsync<QuoteDomainOrder, DomainQuote>(u =>
+                u.ExecuteAsync(candidate.GroupId, candidate.Domain, _legalAge, CancellationToken.None));
+        }
     });
 
     private Task PlaceAsync() => RunAsync(async () =>

@@ -59,6 +59,9 @@ public static class DependencyInjection
         .AddScoped<QuoteDomainOrder>()
         .AddScoped<PlaceDomainOrder>()
         .AddScoped<ChangeDomainCancellation>()
+        .AddScoped<QuoteDomainTransfer>()
+        .AddScoped<ChangeDomainTransferLock>()
+        .AddScoped<RevealDomainAuthCode>()
         .AddScoped<RequestAppInstall>()
         .AddScoped<RunAppInstall>();
 }

@@ -153,8 +153,8 @@ public sealed class PlaceDomainOrder(
 
         var total = order.TotalGross.ToString("0.00", CultureInfo.InvariantCulture);
         audit.Add(new AuditEntry(
-            AuditTypes.DomainOrdered,
-            $"Ordered {quote.Domain}: order {order.OrderId}, {total} {order.Currency} gross" +
+            quote.IsTransfer ? AuditTypes.DomainTransferOrdered : AuditTypes.DomainOrdered,
+            $"{(quote.IsTransfer ? "Ordered the transfer of" : "Ordered")} {quote.Domain}: order {order.OrderId}, {total} {order.Currency} gross" +
             (order.PaidAutomatically ? ", paid with the default payment method" : ", awaiting payment"),
             access.UserId, tenantId));
         await unitOfWork.SaveChangesAsync(ct);
@@ -179,9 +179,7 @@ public sealed class ChangeDomainCancellation(
     public async Task ExecuteAsync(Guid groupId, string domain, bool endAtExpiry, CancellationToken ct)
     {
         var tenantId = access.Require(TenantRole.Admin);
-        if (string.IsNullOrWhiteSpace(domain))
-            throw new DomainException("Choose a domain.");
-        var name = domain.Trim().ToLowerInvariant();
+        var name = HeldDomainName(domain);
 
         var registrar = await QuoteDomainOrder.RegistrarAsync(groups, connections, groupId, ct);
         await registrar.SetEndAtExpiryAsync(name, endAtExpiry, ct);
@@ -190,5 +188,96 @@ public sealed class ChangeDomainCancellation(
             ? new AuditEntry(AuditTypes.DomainCancelled, $"Cancelled {name}: it ends when its current term expires", access.UserId, tenantId)
             : new AuditEntry(AuditTypes.DomainCancellationWithdrawn, $"Withdrew the cancellation of {name}: it renews again", access.UserId, tenantId));
         await unitOfWork.SaveChangesAsync(ct);
+    }
+
+    /// <summary>The name of a domain the account already holds, as the registrar lists it.</summary>
+    internal static string HeldDomainName(string domain) =>
+        string.IsNullOrWhiteSpace(domain) ? throw new DomainException("Choose a domain.") : domain.Trim().ToLowerInvariant();
+}
+
+/// <summary>
+/// Prepares moving a domain from another registrar to the group's registrar, with its exact price; placing it goes
+/// through <see cref="PlaceDomainOrder"/>. Like ordering, it spends money, so it needs the Admin role.
+/// </summary>
+public sealed class QuoteDomainTransfer(AccessContext access, IProviderGroupRepository groups, IProviderConnectionFactory connections)
+{
+    /// <summary>Registries issue auth codes of 6 to 32 printable characters; anything far outside is a paste error.</summary>
+    private const int MaxAuthCodeLength = 64;
+
+    public async Task<DomainQuote> ExecuteAsync(Guid groupId, string domain, string authCode, bool ownerIsOfLegalAge, CancellationToken ct)
+    {
+        access.Require(TenantRole.Admin);
+        if (!ownerIsOfLegalAge)
+            throw new DomainException("Confirm that the domain holder is of legal age; registries require it.");
+        var name = DomainSearch.ExpandQuery(domain) is [var single] && single.Contains('.')
+            ? single
+            : throw new DomainException("Choose one domain name including its extension, e.g. example.com.");
+        var code = NormalizeAuthCode(authCode);
+
+        var registrar = await QuoteDomainOrder.RegistrarAsync(groups, connections, groupId, ct);
+        return await registrar.QuoteTransferAsync(name, code, ownerIsOfLegalAge, ct);
+    }
+
+    /// <summary>Trims the code; spaces and line breaks around it come from copying it out of an e-mail.</summary>
+    internal static string NormalizeAuthCode(string authCode)
+    {
+        var code = authCode?.Trim() ?? "";
+        if (code.Length == 0)
+            throw new DomainException("Enter the auth code (also called EPP or transfer code) from the domain's current registrar.");
+        if (code.Length > MaxAuthCodeLength || code.Any(char.IsControl))
+            throw new DomainException("That does not look like an auth code. Copy it again from the current registrar.");
+        return code;
+    }
+}
+
+/// <summary>
+/// Locks a domain against outgoing transfers, or unlocks it so it can move to another registrar. An unlocked domain
+/// can be taken over by anyone with its auth code, so this needs the Admin role.
+/// </summary>
+public sealed class ChangeDomainTransferLock(
+    AccessContext access,
+    IProviderGroupRepository groups,
+    IProviderConnectionFactory connections,
+    IAuditLog audit,
+    IUnitOfWork unitOfWork)
+{
+    public async Task ExecuteAsync(Guid groupId, string domain, bool locked, CancellationToken ct)
+    {
+        var tenantId = access.Require(TenantRole.Admin);
+        var name = ChangeDomainCancellation.HeldDomainName(domain);
+
+        var registrar = await QuoteDomainOrder.RegistrarAsync(groups, connections, groupId, ct);
+        await registrar.SetTransferLockAsync(name, locked, ct);
+
+        audit.Add(new AuditEntry(
+            AuditTypes.DomainTransferLockChanged,
+            locked ? $"Locked {name} against transfers" : $"Unlocked {name} for a transfer to another registrar",
+            access.UserId, tenantId));
+        await unitOfWork.SaveChangesAsync(ct);
+    }
+}
+
+/// <summary>
+/// Reads a domain's auth code so it can be given to another registrar. The code hands over control of the domain, so
+/// reading it needs the Admin role and is audited; the code itself is never written to the audit log.
+/// </summary>
+public sealed class RevealDomainAuthCode(
+    AccessContext access,
+    IProviderGroupRepository groups,
+    IProviderConnectionFactory connections,
+    IAuditLog audit,
+    IUnitOfWork unitOfWork)
+{
+    public async Task<string> ExecuteAsync(Guid groupId, string domain, CancellationToken ct)
+    {
+        var tenantId = access.Require(TenantRole.Admin);
+        var name = ChangeDomainCancellation.HeldDomainName(domain);
+
+        var registrar = await QuoteDomainOrder.RegistrarAsync(groups, connections, groupId, ct);
+        var code = await registrar.GetAuthCodeAsync(name, ct);
+
+        audit.Add(new AuditEntry(AuditTypes.DomainAuthCodeRevealed, $"Revealed the auth code of {name}", access.UserId, tenantId));
+        await unitOfWork.SaveChangesAsync(ct);
+        return code;
     }
 }
