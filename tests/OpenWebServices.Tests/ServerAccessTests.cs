@@ -261,6 +261,54 @@ public class ServerAccessTests
     }
 
     [Fact]
+    public async Task A_root_lock_from_cloud_init_is_repaired_with_sudo_as_the_named_user()
+    {
+        _shell.RootLockUser = "ubuntu";
+        _shell.AuthorizedKeys = "no-port-forwarding,no-agent-forwarding,no-X11-forwarding,command=\"echo 'Please login as the user \\\"ubuntu\\\" rather than the user \\\"root\\\".';echo;sleep 10;exit 142\" "
+                                + _owsKey + "\n";
+        var (sut, _, context) = Sut();
+        var key = AddKey(2, context.UserId);
+
+        await sut.GrantAsync(_server.Id, key.Id, CancellationToken.None);
+
+        Assert.Null(_server.AccessError);
+        Assert.DoesNotContain("command=", _shell.AuthorizedKeys, StringComparison.Ordinal);
+        Assert.True(_shell.HasKey(_owsKey));
+        Assert.True(_shell.HasKey(TestKeys.Ed25519Line(2)));
+        Assert.Contains(_shell.Commands, c => c.StartsWith("ubuntu: printf", StringComparison.Ordinal) && c.Contains("| sudo -n sh -c", StringComparison.Ordinal));
+
+        // Root works directly from now on.
+        _shell.Commands.Clear();
+        await sut.CheckAsync(_server.Id, CancellationToken.None);
+        Assert.All(_shell.Commands, c => Assert.StartsWith("root: ", c, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task A_root_lock_without_passwordless_sudo_explains_the_manual_fix()
+    {
+        _shell.RootLockUser = "debian";
+        _shell.SudoNeedsPassword = true;
+        _shell.AuthorizedKeys = "command=\"echo 'Please login as the user \\\"debian\\\" rather than the user \\\"root\\\".';exit 142\" " + _owsKey + "\n";
+        var (sut, _, _) = Sut();
+
+        var ex = await Assert.ThrowsAsync<RemoteAccessException>(() => sut.CheckAsync(_server.Id, CancellationToken.None));
+
+        Assert.Contains("'debian'", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("sudo", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("command=", _shell.AuthorizedKeys, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(142, "Please login as the user \"ubuntu\" rather than the user \"root\".\n", "ubuntu")]
+    [InlineData(142, "Please login as the user \\\"debian\\\" rather than the user \\\"root\\\".", "debian")]
+    [InlineData(0, "ssh-ed25519 AAAA… someone", null)]
+    [InlineData(1, "cat: permission denied", null)]
+    public void Recognizes_the_cloud_init_root_lock(int exitCode, string output, string? user)
+    {
+        Assert.Equal(user, ServerAccessWriter.RootLoginRedirect(new CommandResult(exitCode, output)));
+    }
+
+    [Fact]
     public async Task An_unreachable_server_records_the_failure_for_a_later_retry()
     {
         _shell.Unreachable = true;

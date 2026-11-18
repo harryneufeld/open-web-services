@@ -40,7 +40,7 @@ public sealed record DesiredKeys(IReadOnlyList<string> Wanted, IReadOnlyCollecti
 /// Reads and writes a server's authorized_keys over SSH with the ows automation key. The ows key is always part of
 /// the wanted set unless a caller removes it on purpose, so a rewrite can never lock ows out by accident.
 /// </summary>
-public sealed class ServerAccessWriter(
+public sealed partial class ServerAccessWriter(
     IServerKeyGrantRepository grants,
     ISshKeyRepository keys,
     IRemoteShell shell,
@@ -48,7 +48,8 @@ public sealed class ServerAccessWriter(
     IClock clock)
 {
     public const string AutomationLabel = "ows automation";
-    private const string AuthorizedKeysPath = "~/.ssh/authorized_keys";
+    // Absolute, so it also works when ows has to sign in as another user and use sudo.
+    private const string AuthorizedKeysPath = "/root/.ssh/authorized_keys";
     private static readonly TimeSpan ConnectTimeout = TimeSpan.FromSeconds(30);
 
     public RemoteTarget TargetFor(Server server, string? privateKeyPem = null)
@@ -103,7 +104,20 @@ public sealed class ServerAccessWriter(
             server.PinHostKey(hostKey.Algorithm, hostKey.Fingerprint);
         target = target with { PinnedHostKey = server.HostKeyFingerprint };
 
+        var sudo = "";
         var read = await shell.RunAsync(target, $"cat {AuthorizedKeysPath} 2>/dev/null || true", ct);
+        if (RootLoginRedirect(read) is { } user)
+        {
+            // The image's cloud-init locked root's keys to a message ("Please login as the user ..."). ows signs in
+            // as that user and repairs root's file with sudo; the rewrite drops the lock, so root works afterwards.
+            target = target with { User = user };
+            sudo = "sudo -n ";
+            read = await shell.RunAsync(target, $"sudo -n cat {AuthorizedKeysPath} 2>/dev/null || true", ct);
+            if (RootLoginRedirect(read) is not null || !read.Succeeded)
+                throw new RemoteAccessException(
+                    $"The server only lets ows in as '{user}', and '{user}' cannot use sudo without a password. " +
+                    "Remove the command=\"…\" prefix in front of the ows key in /root/.ssh/authorized_keys by hand.");
+        }
         if (!read.Succeeded)
             throw new RemoteAccessException($"Could not read {AuthorizedKeysPath} (exit code {read.ExitCode}).");
 
@@ -114,13 +128,32 @@ public sealed class ServerAccessWriter(
         // Written to a temporary file and moved into place, so sshd never sees a half-written file.
         var encoded = Convert.ToBase64String(Encoding.UTF8.GetBytes(rewrite.Content));
         var write = await shell.RunAsync(target,
-            "umask 077 && mkdir -p ~/.ssh && " +
-            $"printf '%s' '{encoded}' | base64 -d > {AuthorizedKeysPath}.ows-new && " +
-            $"mv -f {AuthorizedKeysPath}.ows-new {AuthorizedKeysPath}", ct);
+            $"printf '%s' '{encoded}' | base64 -d | {sudo}sh -c '" +
+            "umask 077 && mkdir -p /root/.ssh && " +
+            $"cat > {AuthorizedKeysPath}.ows-new && mv -f {AuthorizedKeysPath}.ows-new {AuthorizedKeysPath}'", ct);
         if (!write.Succeeded)
             throw new RemoteAccessException($"Could not write {AuthorizedKeysPath}: {write.Output.Trim()}");
         return rewrite;
     }
+
+    /// <summary>
+    /// The user named by cloud-init's root lock: with <c>disable_root</c> (the default of many images) every root key
+    /// gets a forced command that prints "Please login as the user "ubuntu" rather than the user "root"." and exits 142.
+    /// </summary>
+    public static string? RootLoginRedirect(CommandResult result)
+    {
+        // Only the exit code counts: a file that merely contains the lock line (e.g. read with sudo) is not a lock.
+        if (result.ExitCode != RootLockedExitCode)
+            return null;
+        var match = RedirectUser().Match(result.Output);
+        return match.Success ? match.Groups["user"].Value : null;
+    }
+
+    /// <summary>The exit code cloud-init's root lock ends with.</summary>
+    public const int RootLockedExitCode = 142;
+
+    [System.Text.RegularExpressions.GeneratedRegex("Please login as the user \\\\?\"(?<user>[a-z_][a-z0-9_-]{0,31})")]
+    private static partial System.Text.RegularExpressions.Regex RedirectUser();
 
     /// <summary>Records a successful write: grants are done, the retired ows key is gone, unknown keys are listed.</summary>
     public void Settle(Server server, IReadOnlyList<ServerKeyGrant> serverGrants, AuthorizedKeysRewrite rewrite, bool retiredKeyRemoved)

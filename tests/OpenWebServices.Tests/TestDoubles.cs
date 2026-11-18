@@ -122,10 +122,30 @@ internal sealed class FakeRemoteShell : IRemoteShell
         return Task.FromResult(HostKey);
     }
 
+    /// <summary>
+    /// Simulates cloud-init's root lock: root keys that carry a command= option only print a message naming this
+    /// user and exit 142. That user signs in with the same key and may use sudo without a password.
+    /// </summary>
+    public string? RootLockUser { get; set; }
+
+    public bool SudoNeedsPassword { get; set; }
+
     public Task<CommandResult> RunAsync(RemoteTarget target, string command, CancellationToken ct)
     {
         Authenticate(target);
-        Commands.Add(command);
+        Commands.Add($"{target.User}: {command}");
+        if (target.User == "root" && RootLockUser is { } lockUser && UsedKeyLine(target).Contains("command=", StringComparison.Ordinal))
+            return Task.FromResult(new CommandResult(142, $"Please login as the user \"{lockUser}\" rather than the user \"root\".\n\n"));
+        if (target.User != "root")
+        {
+            if (target.User != RootLockUser)
+                throw new RemoteAccessException($"{target.Host} refused the ows key for {target.User}.");
+            if (!command.Contains("sudo -n ", StringComparison.Ordinal))
+                return Task.FromResult(new CommandResult(1, "Permission denied"));
+            if (SudoNeedsPassword)
+                return Task.FromResult(new CommandResult(1, "sudo: a password is required"));
+            command = command.Replace("sudo -n ", "", StringComparison.Ordinal);
+        }
         if (command.StartsWith("cat ", StringComparison.Ordinal))
             return Task.FromResult(new CommandResult(0, AuthorizedKeys));
         if (command.Contains("base64 -d", StringComparison.Ordinal))
@@ -145,6 +165,15 @@ internal sealed class FakeRemoteShell : IRemoteShell
 
     public bool HasKey(string publicLine) =>
         AuthorizedKeys.Split('\n').Any(l => OpenWebServices.Domain.SshKeys.SshPublicKey.FindInAuthorizedKeysLine(l)?.Blob == TestKeys.Blob(publicLine));
+
+    private string UsedKeyLine(RemoteTarget target)
+    {
+        var blob = TestKeys.Blob(TestKeys.Ed25519Line(KeyNumber(target)));
+        return AuthorizedKeys.Split('\n').First(l => OpenWebServices.Domain.SshKeys.SshPublicKey.FindInAuthorizedKeysLine(l)?.Blob == blob);
+    }
+
+    private static byte KeyNumber(RemoteTarget target) =>
+        byte.Parse(target.PrivateKeyPem["PRIVATE-".Length..], System.Globalization.CultureInfo.InvariantCulture);
 
     private void Authenticate(RemoteTarget target)
     {

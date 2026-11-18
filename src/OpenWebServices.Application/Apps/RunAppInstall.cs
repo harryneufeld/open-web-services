@@ -72,6 +72,10 @@ public sealed class RunAppInstall(
     {
         install.AppendLog($"$ {command}");
         var result = await shell.RunAsync(target, command, ct);
+        if (Access.ServerAccessWriter.RootLoginRedirect(result) is { } user)
+            throw new InvalidOperationException(
+                $"The server only lets ows in as '{user}' so far. ows unlocks root on its next SSH access check; " +
+                "click Check now under SSH access, then install again.");
         if (!string.IsNullOrWhiteSpace(result.Output))
             install.AppendLog(result.Output.TrimEnd());
         if (!result.Succeeded)
