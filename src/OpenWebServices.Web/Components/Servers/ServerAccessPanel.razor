@@ -1,0 +1,396 @@
+@* Who can sign in to a server: the ows key, granted keys, unknown keys found on the server, and the pinned host key. *@
+@inject UseCaseRunner Runner
+
+<section class="panel" aria-labelledby="ssh-access">
+    <div class="panel-header">
+        <div>
+            <h2 id="ssh-access">SSH access</h2>
+            <p>Keys that can sign in as root. ows keeps <code>~/.ssh/authorized_keys</code> in line with this list over SSH.</p>
+        </div>
+        @if (_view is { Automation: not null, IsReachable: true, CanEdit: true })
+        {
+            <div class="page-actions">
+                <span class="subtle">@CheckedText(_view)</span>
+                <button class="btn btn-sm" disabled="@(_busy is not null)" @onclick="CheckAsync">
+                    @if (_busy == "check")
+                    {
+                        <span class="spinner"></span><text>Checking…</text>
+                    }
+                    else
+                    {
+                        <Icon Name="refresh" /><text>Check now</text>
+                    }
+                </button>
+            </div>
+        }
+    </div>
+
+    @if (_view is null)
+    {
+        @if (_error is not null)
+        {
+            <div class="panel-body"><Notice Kind="error">@_error</Notice></div>
+        }
+        else
+        {
+            <SkeletonRows Count="2" />
+        }
+    }
+    else
+    {
+        var view = _view;
+        <div class="panel-body stack">
+            @if (_error is not null)
+            {
+                <Notice Kind="error">@_error</Notice>
+            }
+            @if (view.Error is not null && view.Automation is not null && _error is null)
+            {
+                <Notice Kind="warn">@view.Error</Notice>
+            }
+
+            @if (view.Host is not null)
+            {
+                <div class="panel-section">
+                    <h3>Connect</h3>
+                    <dl class="facts">
+                        <div class="wide-fact">
+                            <dt>Sign in</dt>
+                            <dd class="with-copy"><code class="nowrap">ssh root@@@view.Host</code><CopyButton Value="@($"ssh root@{view.Host}")" Label="SSH command" /></dd>
+                        </div>
+                        <div class="wide-fact">
+                            <dt>Host key</dt>
+                            @if (view.PinnedHostKey is { } hostKey)
+                            {
+                                <dd class="with-copy">
+                                    <span class="fingerprint"><span class="algo">@hostKey.Algorithm</span><span class="mono">@hostKey.Fingerprint</span></span>
+                                    <CopyButton Value="@hostKey.Fingerprint" Label="host key fingerprint" />
+                                </dd>
+                                <dd class="hint">Your first <code>ssh</code> connection shows a fingerprint; it must match this one.</dd>
+                                @if (view.CanAdmin)
+                                {
+                                    <dd class="inline-actions">
+                                        @if (_confirm == "host")
+                                        {
+                                            <span class="hint">Only after a reinstall: ows accepts whatever key the server presents next.</span>
+                                            <button class="btn btn-sm" @onclick="() => _confirm = null">Cancel</button>
+                                            <button class="btn btn-sm btn-danger-solid" disabled="@(_busy is not null)" @onclick="ForgetHostKeyAsync">Trust next key</button>
+                                        }
+                                        else
+                                        {
+                                            <button class="link-btn" @onclick="@(() => _confirm = "host")">Trust a new host key…</button>
+                                        }
+                                    </dd>
+                                }
+                            }
+                            else
+                            {
+                                <dd class="hint">Pinned when ows first connects.</dd>
+                            }
+                        </div>
+                    </dl>
+                </div>
+            }
+
+            <div class="panel-section">
+                <h3>Keys</h3>
+                <div class="edit-grid access">
+                    <div class="row head"><span>Key</span><span>Owner</span><span>Fingerprint</span><span>State</span><span></span></div>
+
+                    @if (view.Automation is { } automation)
+                    {
+                        <div class="row">
+                            <div class="cell-text"><span class="key-name">ows automation</span><span class="secondary">Installs apps and manages these keys</span></div>
+                            <div data-label="Owner" class="cell-text">ows</div>
+                            <div data-label="Fingerprint" class="cell-text"><span class="fingerprint"><span class="algo">@automation.Algorithm</span><span class="mono">@automation.Fingerprint</span></span></div>
+                            <div data-label="State">@AutomationState(view)</div>
+                            <div class="row-actions">
+                                @if (_confirm == "revoke-ows")
+                                {
+                                    <button class="btn btn-sm" @onclick="() => _confirm = null">Cancel</button>
+                                    <button class="btn btn-sm btn-danger-solid" disabled="@(_busy is not null)" @onclick="RevokeAutomationAsync">
+                                        @if (_busy == "revoke-ows") { <span class="spinner"></span> }
+                                        Revoke
+                                    </button>
+                                }
+                                else
+                                {
+                                    <CopyButton Value="@automation.PublicKey" Label="ows public key" />
+                                    @if (view.CanEdit && view.IsReachable)
+                                    {
+                                        <button class="btn btn-sm" disabled="@(_busy is not null)" @onclick="RotateAsync" title="Replace the ows key with a new one">
+                                            @if (_busy == "rotate") { <span class="spinner"></span><text>Rotating…</text> } else { <Icon Name="rotate" /><text>Rotate</text> }
+                                        </button>
+                                    }
+                                    @if (view.CanAdmin && view.IsReachable)
+                                    {
+                                        <button class="btn btn-sm btn-ghost" disabled="@(_busy is not null)" @onclick="@(() => _confirm = "revoke-ows")" title="Remove the ows key from the server">
+                                            <Icon Name="trash" /><span class="sr-only">Revoke the ows key</span>
+                                        </button>
+                                    }
+                                }
+                            </div>
+                            @if (_confirm == "revoke-ows")
+                            {
+                                <p class="hint wide-row">ows removes its key from the server and forgets it. It can no longer install apps or change keys here until someone gives it access again.</p>
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="row">
+                            <div class="cell-text"><span class="key-name">ows automation</span><span class="secondary">No access</span></div>
+                            <div data-label="Owner" class="cell-text">ows</div>
+                            <div data-label="Fingerprint" class="cell-text subtle">–</div>
+                            <div data-label="State"><span class="status neutral">Off</span></div>
+                            <div class="row-actions">
+                                @if (view.CanAdmin)
+                                {
+                                    <button class="btn btn-sm" disabled="@(_busy is not null)" @onclick="RestoreAutomationAsync"><Icon Name="key" />Give ows access</button>
+                                }
+                            </div>
+                        </div>
+                    }
+
+                    @foreach (var key in view.Keys)
+                    {
+                        <div class="row">
+                            <div class="cell-text"><span class="key-name">@key.Name</span></div>
+                            <div data-label="Owner" class="cell-text">@key.OwnerName</div>
+                            <div data-label="Fingerprint" class="cell-text"><span class="fingerprint"><span class="algo">@key.Algorithm</span><span class="mono">@key.Fingerprint</span></span></div>
+                            <div data-label="State">@KeyState(view, key)</div>
+                            <div class="row-actions">
+                                @if (key.CanRemove)
+                                {
+                                    @if (_confirm == $"remove-{key.KeyId}")
+                                    {
+                                        <button class="btn btn-sm" @onclick="() => _confirm = null">Cancel</button>
+                                        <button class="btn btn-sm btn-danger-solid" disabled="@(_busy is not null)" @onclick="() => RemoveAsync(key.KeyId)">Remove</button>
+                                    }
+                                    else
+                                    {
+                                        <button class="btn btn-sm btn-ghost" disabled="@(_busy is not null)" @onclick="@(() => _confirm = $"remove-{key.KeyId}")" title="Remove access">
+                                            <Icon Name="trash" /><span class="sr-only">Remove @key.Name from this server</span>
+                                        </button>
+                                    }
+                                }
+                            </div>
+                        </div>
+                    }
+
+                    @if (view.CanEdit && view.Automation is not null)
+                    {
+                        <div class="divider"></div>
+                        <div class="row add-row">
+                            @if (view.Addable.Count > 0)
+                            {
+                                <div class="wide">
+                                    <select @bind="_addKeyId" aria-label="Key to give access">
+                                        <option value="">Choose a key…</option>
+                                        @foreach (var choice in view.Addable)
+                                        {
+                                            <option value="@choice.Id">@choice.Label</option>
+                                        }
+                                    </select>
+                                    @if (_addError is not null)
+                                    {
+                                        <p class="field-error">@_addError</p>
+                                    }
+                                </div>
+                                <div class="row-actions">
+                                    <button class="btn btn-sm" disabled="@(_busy is not null)" @onclick="GrantAsync">
+                                        @if (_busy == "grant") { <span class="spinner"></span> } else { <Icon Name="plus" /> }
+                                        Give access
+                                    </button>
+                                </div>
+                            }
+                            else
+                            {
+                                <p class="hint wide-row">Every key you can use already has access. <a href="/ssh-keys">Add a key</a> to give it access here.</p>
+                            }
+                        </div>
+                    }
+                </div>
+                @if (!view.IsReachable && view.Automation is not null && view.HasPendingChanges)
+                {
+                    <p class="hint">Changes are written once the server is running.</p>
+                }
+            </div>
+
+            @if (_restoredKey is not null)
+            {
+                <Notice Kind="info">
+                    <p>ows created a new key. Sign in with one of your keys and add it to the server; ows picks it up on the next check:</p>
+                    <div class="command with-copy"><code>@RestoreCommand</code><CopyButton Value="@RestoreCommand" Label="command" /></div>
+                </Notice>
+            }
+
+            @if (view.UnknownKeys.Count > 0)
+            {
+                <div class="panel-section">
+                    <h3>Keys ows doesn't know</h3>
+                    <Notice Kind="warn">These keys are in authorized_keys but nobody added them in ows. Remove the ones you don't recognize.</Notice>
+                    <div class="edit-grid unknown">
+                        <div class="row head"><span>Fingerprint</span><span>Comment</span><span></span></div>
+                        @foreach (var unknown in view.UnknownKeys)
+                        {
+                            <div class="row">
+                                <div class="cell-text"><span class="fingerprint"><span class="algo">@unknown.Algorithm</span><span class="mono">@unknown.Fingerprint</span></span></div>
+                                <div data-label="Comment" class="cell-text">@(unknown.Comment.Length > 0 ? unknown.Comment : "–")</div>
+                                <div class="row-actions">
+                                    @if (_confirm == $"unknown-{unknown.Fingerprint}")
+                                    {
+                                        <button class="btn btn-sm" @onclick="() => _confirm = null">Cancel</button>
+                                        <button class="btn btn-sm btn-danger-solid" disabled="@(_busy is not null)" @onclick="() => RemoveUnknownAsync(unknown.Fingerprint)">Remove</button>
+                                    }
+                                    else if (_adopting == unknown.Fingerprint)
+                                    {
+                                        <input class="adopt-name" @bind="_adoptName" @bind:event="oninput" placeholder="Name, e.g. old-laptop" aria-label="Name for the adopted key" />
+                                        <button class="btn btn-sm" @onclick="() => _adopting = null">Cancel</button>
+                                        <button class="btn btn-sm btn-primary" disabled="@(_busy is not null)" @onclick="() => AdoptAsync(unknown.Fingerprint)">Adopt</button>
+                                    }
+                                    else if (view.CanEdit)
+                                    {
+                                        @if (view.CanAdmin)
+                                        {
+                                            <button class="btn btn-sm" disabled="@(_busy is not null)" @onclick="() => StartAdopt(unknown)" title="Keep it as a shared key ows manages">Adopt…</button>
+                                        }
+                                        <button class="btn btn-sm btn-ghost" disabled="@(_busy is not null)" @onclick="@(() => _confirm = $"unknown-{unknown.Fingerprint}")" title="Remove from the server">
+                                            <Icon Name="trash" /><span class="sr-only">Remove key @unknown.Fingerprint</span>
+                                        </button>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</section>
+
+@code {
+    private ServerAccessView? _view;
+    private string? _error;
+    private string? _addError;
+    private string? _busy;
+    private string? _confirm;
+    private string _addKeyId = "";
+    private string? _adopting;
+    private string _adoptName = "";
+    private string? _restoredKey;
+
+    [Parameter, EditorRequired] public Guid ServerId { get; set; }
+
+    /// <summary>Raised after a change, so the page can refresh what depends on ows access (e.g. apps).</summary>
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    private string RestoreCommand => $"echo '{_restoredKey}' >> ~/.ssh/authorized_keys";
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    /// <summary>Reloads after live updates from the page.</summary>
+    public async Task ReloadAsync()
+    {
+        await LoadAsync();
+        StateHasChanged();
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            _view = await Runner.RunAsync<ServerAccess, ServerAccessView>(u => u.GetAsync(ServerId, CancellationToken.None));
+            if (_view is { Automation: not null, Error: null, CheckedAtUtc: not null }) // ows signed in with it
+                _restoredKey = null;
+        }
+        catch (Exception ex) when (UserFacingErrors.Matches(ex))
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private static RenderFragment Status(string kind, string text) =>
+        @<span class="status @kind">@if (kind == "busy") { <span class="spinner"></span> }@text</span>;
+
+    private static RenderFragment AutomationState(ServerAccessView view) =>
+        view.Error is not null ? Status("danger", "Check failed")
+        : view.RetiredKeyPending ? Status("busy", "Removing old key")
+        : view.CheckedAtUtc is null ? Status("neutral", "Not checked yet")
+        : Status("ok", "Active");
+
+    private static RenderFragment KeyState(ServerAccessView view, ServerKeyRow key) => key switch
+    {
+        { State: GrantState.Absent } => Status(view.IsReachable ? "busy" : "neutral", view.IsReachable ? "Removing" : "To be removed"),
+        { IsPending: true } => Status(view.IsReachable ? "busy" : "neutral", view.IsReachable ? "Adding" : "Waits for the server"),
+        _ => Status("ok", "Active"),
+    };
+
+    private static string CheckedText(ServerAccessView view) =>
+        view.CheckedAtUtc is { } at ? $"Checked {Formatting.Ago(at)}" : "Not checked yet";
+
+    private Task CheckAsync() => RunAsync("check", () => Runner.RunAsync<ServerAccess>(u => u.CheckAsync(ServerId, CancellationToken.None)));
+
+    private Task RotateAsync() => RunAsync("rotate", () => Runner.RunAsync<ServerAccess>(u => u.RotateAutomationKeyAsync(ServerId, CancellationToken.None)));
+
+    private Task RevokeAutomationAsync() =>
+        RunAsync("revoke-ows", () => Runner.RunAsync<ServerAccess>(u => u.RevokeAutomationKeyAsync(ServerId, CancellationToken.None)));
+
+    private Task RestoreAutomationAsync() => RunAsync("restore", async () =>
+        _restoredKey = await Runner.RunAsync<ServerAccess, string>(u => u.RestoreAutomationKeyAsync(ServerId, CancellationToken.None)));
+
+    private Task ForgetHostKeyAsync() =>
+        RunAsync("host", () => Runner.RunAsync<ServerAccess>(u => u.ForgetHostKeyAsync(ServerId, CancellationToken.None)));
+
+    private Task RemoveAsync(Guid keyId) =>
+        RunAsync("remove", () => Runner.RunAsync<ServerAccess>(u => u.RemoveAsync(ServerId, keyId, CancellationToken.None)));
+
+    private Task RemoveUnknownAsync(string fingerprint) =>
+        RunAsync("unknown", () => Runner.RunAsync<ServerAccess>(u => u.RemoveUnknownAsync(ServerId, fingerprint, CancellationToken.None)));
+
+    private void StartAdopt(UnknownKeyRow unknown)
+    {
+        _adopting = unknown.Fingerprint;
+        _adoptName = unknown.Comment.Length is > 0 and <= SshKey.MaxNameLength ? unknown.Comment : "";
+    }
+
+    private async Task AdoptAsync(string fingerprint)
+    {
+        await RunAsync("adopt", () => Runner.RunAsync<ServerAccess>(u => u.AdoptUnknownAsync(ServerId, fingerprint, _adoptName, CancellationToken.None)));
+        if (_error is null)
+            _adopting = null;
+    }
+
+    private async Task GrantAsync()
+    {
+        _addError = null;
+        if (!Guid.TryParse(_addKeyId, out var keyId))
+        {
+            _addError = "Choose a key first.";
+            return;
+        }
+        await RunAsync("grant", () => Runner.RunAsync<ServerAccess>(u => u.GrantAsync(ServerId, keyId, CancellationToken.None)));
+        _addKeyId = "";
+    }
+
+    private async Task RunAsync(string action, Func<Task> command)
+    {
+        _busy = action;
+        _error = null;
+        try
+        {
+            await command();
+            _confirm = null;
+        }
+        catch (Exception ex) when (UserFacingErrors.Matches(ex))
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _busy = null;
+            await LoadAsync();
+            await OnChanged.InvokeAsync();
+        }
+    }
+}

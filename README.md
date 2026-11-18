@@ -50,5 +50,6 @@ dotnet test
 ## Security
 
 - Sign-in is a cookie login with PBKDF2-hashed passwords. The first visit shows `/setup` to create the admin account; after that setup is closed. Login attempts are limited to 10 per minute per IP. Behind a reverse proxy the limiter sees the proxy's IP until forwarded headers are configured, and the auth cookie is HTTPS-only outside Development, so terminate TLS at the proxy.
-- Secrets (API tokens, server SSH keys) are encrypted with ASP.NET Data Protection. Back up `DataProtection:KeysPath` (default `data-protection-keys/`); without it stored secrets are unreadable.
-- SSH host keys are trusted on first contact.
+- Secrets (API tokens, the ows automation key of each server) are encrypted with ASP.NET Data Protection. Back up `DataProtection:KeysPath` (default `data-protection-keys/`); without it stored secrets are unreadable.
+- SSH access: people sign in to servers with their own keys. ows stores only public keys; a key pair generated in the browser downloads its private key and never sends it. ows keeps a marked block in root's `~/.ssh/authorized_keys` in line with the keys granted per server, reports keys it does not know, and removes revoked keys (also when a member leaves the tenant). Its own automation key can be rotated or revoked per server; rotation proves the new key works before the old one is removed.
+- SSH host keys are pinned on first contact; a changed host key stops ows until an admin trusts the new one.

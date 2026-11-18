@@ -4,6 +4,7 @@ using OpenWebServices.Domain.Apps;
 using OpenWebServices.Domain.Dns;
 using OpenWebServices.Domain.Providers;
 using OpenWebServices.Domain.Servers;
+using OpenWebServices.Domain.SshKeys;
 using OpenWebServices.Domain.Tenants;
 
 namespace OpenWebServices.Infrastructure.Persistence;
@@ -32,6 +33,8 @@ internal sealed class EfUnitOfWork(AppDbContext db, IChangeNotifier notifier) : 
         Server s => new ResourceChange(ResourceTopics.Servers, s.Id),
         DnsZone z => new ResourceChange(ResourceTopics.DnsZones, z.Id),
         AppInstall a => new ResourceChange(ResourceTopics.AppInstalls, a.ServerId),
+        ServerKeyGrant g => new ResourceChange(ResourceTopics.Servers, g.ServerId),
+        SshKey k => new ResourceChange(ResourceTopics.SshKeys, k.Id),
         _ => null,
     };
 }
@@ -69,6 +72,15 @@ internal sealed class ServerRepository(AppDbContext db) : IServerRepository
 
     public async Task<IReadOnlyList<Guid>> ListGroupsWithTransitioningServersAsync(CancellationToken ct) =>
         await db.Servers.Where(s => Transitioning.Contains(s.Status)).Select(s => s.GroupId).Distinct().ToListAsync(ct);
+
+    public async Task<IReadOnlyList<Guid>> ListServersNeedingAccessCheckAsync(DateTime checkedBeforeUtc, CancellationToken ct) =>
+        await db.Servers
+            .Where(s => s.Status == ServerStatus.Running && s.PublicIpv4 != null && s.EncryptedSshPrivateKey != null)
+            .Where(s => s.AccessCheckedAtUtc == null
+                        || (s.RetiredAutomationPublicKey != null && s.AccessCheckedAtUtc < checkedBeforeUtc)
+                        || (s.AccessError != null && s.AccessCheckedAtUtc < checkedBeforeUtc))
+            .Select(s => s.Id)
+            .ToListAsync(ct);
 }
 
 internal sealed class DnsZoneRepository(AppDbContext db) : IDnsZoneRepository
@@ -168,4 +180,42 @@ internal sealed class EfAuditLog(AppDbContext db, IClock clock) : IAuditLog
             .Take(count)
             .Select(e => new AuditRecord(e.AtUtc, e.Type, e.Detail, e.ActorUserId, e.TenantId, e.IpAddress))
             .ToListAsync(ct);
+
+    public async Task<IReadOnlyList<AuditRecord>> ListRecentAsync(
+        Guid tenantId, IReadOnlyCollection<string> types, int count, CancellationToken ct) =>
+        await db.AuditEvents.AsNoTracking()
+            .Where(e => e.TenantId == tenantId && types.Contains(e.Type))
+            .OrderByDescending(e => e.Id)
+            .Take(count)
+            .Select(e => new AuditRecord(e.AtUtc, e.Type, e.Detail, e.ActorUserId, e.TenantId, e.IpAddress))
+            .ToListAsync(ct);
+}
+
+internal sealed class SshKeyRepository(AppDbContext db) : ISshKeyRepository
+{
+    public void Add(SshKey key) => db.SshKeys.Add(key);
+
+    public Task<SshKey?> FindAsync(Guid id, CancellationToken ct) => db.SshKeys.FirstOrDefaultAsync(k => k.Id == id, ct);
+
+    public async Task<IReadOnlyList<SshKey>> ListAsync(CancellationToken ct) =>
+        await db.SshKeys.OrderBy(k => k.CreatedAtUtc).ToListAsync(ct);
+
+    public async Task<IReadOnlyList<SshKey>> ListByOwnerAsync(Guid tenantId, Guid ownerUserId, CancellationToken ct) =>
+        await db.SshKeys.Where(k => k.TenantId == tenantId && k.OwnerUserId == ownerUserId).ToListAsync(ct);
+}
+
+internal sealed class ServerKeyGrantRepository(AppDbContext db) : IServerKeyGrantRepository
+{
+    public void Add(ServerKeyGrant grant) => db.ServerKeyGrants.Add(grant);
+
+    public void Remove(ServerKeyGrant grant) => db.ServerKeyGrants.Remove(grant);
+
+    public async Task<IReadOnlyList<ServerKeyGrant>> ListForServerAsync(Guid serverId, CancellationToken ct) =>
+        await db.ServerKeyGrants.Where(g => g.ServerId == serverId).OrderBy(g => g.CreatedAtUtc).ToListAsync(ct);
+
+    public async Task<IReadOnlyList<ServerKeyGrant>> ListForKeyAsync(Guid sshKeyId, CancellationToken ct) =>
+        await db.ServerKeyGrants.Where(g => g.SshKeyId == sshKeyId).ToListAsync(ct);
+
+    public async Task<IReadOnlyList<Guid>> ListServersWithPendingChangesAsync(CancellationToken ct) =>
+        await db.ServerKeyGrants.Where(g => g.AppliedAtUtc == null).Select(g => g.ServerId).Distinct().ToListAsync(ct);
 }

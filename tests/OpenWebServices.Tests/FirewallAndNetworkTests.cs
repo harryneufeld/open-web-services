@@ -203,7 +203,7 @@ public class FirewallAndNetworkTests
 
     private static Server RunningServer()
     {
-        var server = Server.Provision(TestData.TenantId, Guid.NewGuid(), "web-1", "fsn1", "cx23", "ubuntu-24.04", 4m, "EUR", "key", Now);
+        var server = Server.Provision(TestData.TenantId, Guid.NewGuid(), "web-1", "fsn1", "cx23", "ubuntu-24.04", 4m, "EUR", "key", TestKeys.Ed25519Line(200), Now);
         server.AttachProviderResources("1", "2", "203.0.113.10");
         server.ApplyObserved(ObservedServerState.Running, null, Now);
         return server;

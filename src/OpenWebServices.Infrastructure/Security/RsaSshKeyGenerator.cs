@@ -12,6 +12,18 @@ internal sealed class RsaSshKeyGenerator : ISshKeyGenerator
     public SshKeyPair Generate(string comment)
     {
         using var rsa = RSA.Create(KeySizeBits);
+        return new SshKeyPair(rsa.ExportRSAPrivateKeyPem(), PublicKeyLine(rsa, comment));
+    }
+
+    public string PublicKeyOf(string privateKeyPem, string comment)
+    {
+        using var rsa = RSA.Create();
+        rsa.ImportFromPem(privateKeyPem);
+        return PublicKeyLine(rsa, comment);
+    }
+
+    private static string PublicKeyLine(RSA rsa, string comment)
+    {
         var parameters = rsa.ExportParameters(includePrivateParameters: false);
 
         using var blob = new MemoryStream();
@@ -19,8 +31,7 @@ internal sealed class RsaSshKeyGenerator : ISshKeyGenerator
         WriteMultiPrecisionInteger(blob, parameters.Exponent!);
         WriteMultiPrecisionInteger(blob, parameters.Modulus!);
 
-        var publicKey = $"ssh-rsa {Convert.ToBase64String(blob.ToArray())} {comment}";
-        return new SshKeyPair(rsa.ExportRSAPrivateKeyPem(), publicKey);
+        return $"ssh-rsa {Convert.ToBase64String(blob.ToArray())} {comment}";
     }
 
     private static void WriteString(Stream stream, ReadOnlySpan<byte> data)

@@ -73,6 +73,9 @@ public interface IAuditLog
 {
     void Add(AuditEntry entry);
     Task<IReadOnlyList<AuditRecord>> ListRecentAsync(int count, CancellationToken ct);
+
+    /// <summary>The newest entries of one tenant with one of the given types.</summary>
+    Task<IReadOnlyList<AuditRecord>> ListRecentAsync(Guid tenantId, IReadOnlyCollection<string> types, int count, CancellationToken ct);
 }
 
 public static class AuditTypes
@@ -108,4 +111,24 @@ public static class AuditTypes
     public const string DomainTransferOrdered = "domain-transfer-ordered";
     public const string DomainTransferLockChanged = "domain-transfer-lock-changed";
     public const string DomainAuthCodeRevealed = "domain-auth-code-revealed";
+}
+
+public static class SshAuditTypes
+{
+    public const string KeyAdded = "ssh-key-added";
+    public const string KeyRevoked = "ssh-key-revoked";
+    public const string AccessGranted = "ssh-access-granted";
+    public const string AccessRemoved = "ssh-access-removed";
+    public const string UnknownKeyRemoved = "ssh-unknown-key-removed";
+    public const string UnknownKeyAdopted = "ssh-unknown-key-adopted";
+    public const string AutomationKeyRotated = "ssh-automation-key-rotated";
+    public const string AutomationKeyRevoked = "ssh-automation-key-revoked";
+    public const string AutomationKeyRestored = "ssh-automation-key-restored";
+    public const string HostKeyForgotten = "ssh-host-key-forgotten";
+
+    public static IReadOnlyList<string> All { get; } =
+    [
+        KeyAdded, KeyRevoked, AccessGranted, AccessRemoved, UnknownKeyRemoved, UnknownKeyAdopted,
+        AutomationKeyRotated, AutomationKeyRevoked, AutomationKeyRestored, HostKeyForgotten,
+    ];
 }

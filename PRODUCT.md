@@ -31,7 +31,10 @@ living at the provider; ows imports and manages them through each provider's API
 
 ## Capabilities and Constraints
 
-- Servers: list, import, create from offers, power on/off/reboot, delete, app install (only on servers created by ows).
+- Servers: list, import, create from offers, power on/off/reboot, delete, app install (on servers ows has access to).
+- SSH keys: members add public keys (pasted, or generated in the browser with the private key downloaded) and give
+  them access per server; ows writes authorized_keys over SSH, flags unknown keys, pins host keys and can rotate or
+  revoke its own key.
 - DNS: zones (import, create, delete) and record sets (read live, create, edit, delete).
 - Server networking and firewall (read and written live): public addresses, reverse DNS, private networks, and one
   inbound firewall per server managed by ows; firewalls made elsewhere are shown, never changed. Networking and

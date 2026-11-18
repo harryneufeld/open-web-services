@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using OpenWebServices.Application.Abstractions;
+using OpenWebServices.Application.Access;
 using OpenWebServices.Application.Apps;
 using OpenWebServices.Application.Dns;
 using OpenWebServices.Application.Domains;
@@ -62,6 +63,10 @@ public static class DependencyInjection
         .AddScoped<QuoteDomainTransfer>()
         .AddScoped<ChangeDomainTransferLock>()
         .AddScoped<RevealDomainAuthCode>()
+        .AddSingleton<ServerAccessLocks>()
+        .AddScoped<SshKeys>()
+        .AddScoped<ServerAccessWriter>()
+        .AddScoped<ServerAccess>()
         .AddScoped<RequestAppInstall>()
         .AddScoped<RunAppInstall>();
 }

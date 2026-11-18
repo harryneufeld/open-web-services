@@ -8,7 +8,7 @@ public class ServerTests
     private static readonly DateTime Now = new(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc);
 
     private static Server NewServer(string name = "web-1") =>
-        Server.Provision(TestData.TenantId, Guid.NewGuid(), name, "fsn1", "cx23", "ubuntu-24.04", 4m, "EUR", "key", Now);
+        Server.Provision(TestData.TenantId, Guid.NewGuid(), name, "fsn1", "cx23", "ubuntu-24.04", 4m, "EUR", "key", TestKeys.Ed25519Line(200), Now);
 
     private static Server RunningServer()
     {
@@ -42,7 +42,7 @@ public class ServerTests
     [Fact]
     public void Provision_requires_a_group() =>
         Assert.Throws<DomainException>(() =>
-            Server.Provision(TestData.TenantId, Guid.Empty, "web", "fsn1", "cx23", "ubuntu-24.04", 4m, "EUR", "key", Now));
+            Server.Provision(TestData.TenantId, Guid.Empty, "web", "fsn1", "cx23", "ubuntu-24.04", 4m, "EUR", "key", TestKeys.Ed25519Line(200), Now));
 
     [Fact]
     public void Running_server_with_ip_is_reachable_and_can_get_apps()

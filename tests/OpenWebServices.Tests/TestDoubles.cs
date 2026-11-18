@@ -34,11 +34,128 @@ internal sealed class FakeAuditLog : IAuditLog
     public void Add(AuditEntry entry) => Entries.Add(entry);
     public Task<IReadOnlyList<AuditRecord>> ListRecentAsync(int count, CancellationToken ct) =>
         Task.FromResult<IReadOnlyList<AuditRecord>>([]);
+    public Task<IReadOnlyList<AuditRecord>> ListRecentAsync(Guid tenantId, IReadOnlyCollection<string> types, int count, CancellationToken ct) =>
+        Task.FromResult<IReadOnlyList<AuditRecord>>(
+            [.. Entries.Where(e => e.TenantId == tenantId && types.Contains(e.Type)).Reverse().Take(count)
+                .Select(e => new AuditRecord(DateTime.UtcNow, e.Type, e.Detail, e.ActorUserId, e.TenantId, e.IpAddress))]);
 }
 
+/// <summary>
+/// Hands out numbered key pairs: the "private key" is "PRIVATE-n" and the public key a valid Ed25519 line whose
+/// key bytes encode n, so tests can tell which private key belongs to which public key.
+/// </summary>
 internal sealed class FakeKeyGenerator : ISshKeyGenerator
 {
-    public SshKeyPair Generate(string comment) => new("PRIVATE", $"ssh-rsa AAAA {comment}");
+    private int _count;
+
+    public SshKeyPair Generate(string comment)
+    {
+        var n = ++_count;
+        return new($"PRIVATE-{n}", TestKeys.Ed25519Line((byte)n, comment));
+    }
+
+    public string PublicKeyOf(string privateKeyPem, string comment) =>
+        TestKeys.Ed25519Line(byte.Parse(privateKeyPem["PRIVATE-".Length..], System.Globalization.CultureInfo.InvariantCulture), comment);
+}
+
+internal static class TestKeys
+{
+    /// <summary>A syntactically valid Ed25519 public key line whose 32 key bytes are all <paramref name="fill"/>.</summary>
+    public static string Ed25519Line(byte fill, string comment = "test")
+    {
+        var blob = new List<byte>();
+        void Write(byte[] data)
+        {
+            blob.AddRange([(byte)(data.Length >> 24), (byte)(data.Length >> 16), (byte)(data.Length >> 8), (byte)data.Length]);
+            blob.AddRange(data);
+        }
+        Write("ssh-ed25519"u8.ToArray());
+        Write(Enumerable.Repeat(fill, 32).ToArray());
+        return $"ssh-ed25519 {Convert.ToBase64String(blob.ToArray())} {comment}".TrimEnd();
+    }
+
+    public static string Blob(string line) => OpenWebServices.Domain.SshKeys.SshPublicKey.FindInAuthorizedKeysLine(line)!.Blob;
+}
+
+internal sealed class InMemorySshKeyRepository : ISshKeyRepository
+{
+    public List<OpenWebServices.Domain.SshKeys.SshKey> Items { get; } = [];
+
+    public void Add(OpenWebServices.Domain.SshKeys.SshKey key) => Items.Add(key);
+    public Task<OpenWebServices.Domain.SshKeys.SshKey?> FindAsync(Guid id, CancellationToken ct) => Task.FromResult(Items.FirstOrDefault(k => k.Id == id));
+    public Task<IReadOnlyList<OpenWebServices.Domain.SshKeys.SshKey>> ListAsync(CancellationToken ct) =>
+        Task.FromResult<IReadOnlyList<OpenWebServices.Domain.SshKeys.SshKey>>(Items.ToList());
+    public Task<IReadOnlyList<OpenWebServices.Domain.SshKeys.SshKey>> ListByOwnerAsync(Guid tenantId, Guid ownerUserId, CancellationToken ct) =>
+        Task.FromResult<IReadOnlyList<OpenWebServices.Domain.SshKeys.SshKey>>(Items.Where(k => k.TenantId == tenantId && k.OwnerUserId == ownerUserId).ToList());
+}
+
+internal sealed class InMemoryGrantRepository : IServerKeyGrantRepository
+{
+    public List<OpenWebServices.Domain.SshKeys.ServerKeyGrant> Items { get; } = [];
+
+    public void Add(OpenWebServices.Domain.SshKeys.ServerKeyGrant grant) => Items.Add(grant);
+    public void Remove(OpenWebServices.Domain.SshKeys.ServerKeyGrant grant) => Items.Remove(grant);
+    public Task<IReadOnlyList<OpenWebServices.Domain.SshKeys.ServerKeyGrant>> ListForServerAsync(Guid serverId, CancellationToken ct) =>
+        Task.FromResult<IReadOnlyList<OpenWebServices.Domain.SshKeys.ServerKeyGrant>>(Items.Where(g => g.ServerId == serverId).ToList());
+    public Task<IReadOnlyList<OpenWebServices.Domain.SshKeys.ServerKeyGrant>> ListForKeyAsync(Guid sshKeyId, CancellationToken ct) =>
+        Task.FromResult<IReadOnlyList<OpenWebServices.Domain.SshKeys.ServerKeyGrant>>(Items.Where(g => g.SshKeyId == sshKeyId).ToList());
+    public Task<IReadOnlyList<Guid>> ListServersWithPendingChangesAsync(CancellationToken ct) =>
+        Task.FromResult<IReadOnlyList<Guid>>(Items.Where(g => g.IsPending).Select(g => g.ServerId).Distinct().ToList());
+}
+
+/// <summary>
+/// A server's sshd and authorized_keys, simulated: a private key "PRIVATE-n" signs in when the matching public key is
+/// in the file. Understands the two commands ows sends (read, and write via base64).
+/// </summary>
+internal sealed class FakeRemoteShell : IRemoteShell
+{
+    public string AuthorizedKeys { get; set; } = "";
+    public HostKey HostKey { get; set; } = new("ED25519", "SHA256:host-key-1");
+    public bool Unreachable { get; set; }
+    public bool FailWrites { get; set; }
+    public List<string> Commands { get; } = [];
+    public int Writes { get; private set; }
+
+    public Task<HostKey> WaitUntilReadyAsync(RemoteTarget target, TimeSpan timeout, CancellationToken ct)
+    {
+        Authenticate(target);
+        return Task.FromResult(HostKey);
+    }
+
+    public Task<CommandResult> RunAsync(RemoteTarget target, string command, CancellationToken ct)
+    {
+        Authenticate(target);
+        Commands.Add(command);
+        if (command.StartsWith("cat ", StringComparison.Ordinal))
+            return Task.FromResult(new CommandResult(0, AuthorizedKeys));
+        if (command.Contains("base64 -d", StringComparison.Ordinal))
+        {
+            if (FailWrites)
+                return Task.FromResult(new CommandResult(1, "disk full"));
+            var start = command.IndexOf("printf '%s' '", StringComparison.Ordinal) + "printf '%s' '".Length;
+            var encoded = command[start..command.IndexOf('\'', start)];
+            AuthorizedKeys = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(encoded));
+            Writes++;
+            return Task.FromResult(new CommandResult(0, ""));
+        }
+        return Task.FromResult(new CommandResult(0, ""));
+    }
+
+    public Task UploadTextAsync(RemoteTarget target, string remotePath, string content, CancellationToken ct) => Task.CompletedTask;
+
+    public bool HasKey(string publicLine) =>
+        AuthorizedKeys.Split('\n').Any(l => OpenWebServices.Domain.SshKeys.SshPublicKey.FindInAuthorizedKeysLine(l)?.Blob == TestKeys.Blob(publicLine));
+
+    private void Authenticate(RemoteTarget target)
+    {
+        if (Unreachable)
+            throw new RemoteAccessException($"Could not connect to {target.Host} on port 22: timed out");
+        if (target.PinnedHostKey is { } pinned && pinned != HostKey.Fingerprint)
+            throw new HostKeyMismatchException(target.Host, pinned, HostKey.Fingerprint);
+        var n = byte.Parse(target.PrivateKeyPem["PRIVATE-".Length..], System.Globalization.CultureInfo.InvariantCulture);
+        if (!HasKey(TestKeys.Ed25519Line(n)))
+            throw new RemoteAccessException($"{target.Host} refused the ows key.");
+    }
 }
 
 internal sealed class FakeSyncScheduler : ISyncScheduler
@@ -61,6 +178,12 @@ internal sealed class InMemoryServerRepository : IServerRepository
 
     public Task<IReadOnlyList<Guid>> ListGroupsWithTransitioningServersAsync(CancellationToken ct) =>
         Task.FromResult<IReadOnlyList<Guid>>(Items.Where(s => s.IsTransitioning).Select(s => s.GroupId).Distinct().ToList());
+
+    public Task<IReadOnlyList<Guid>> ListServersNeedingAccessCheckAsync(DateTime checkedBeforeUtc, CancellationToken ct) =>
+        Task.FromResult<IReadOnlyList<Guid>>(Items
+            .Where(s => s.CanManageKeys && (s.AccessCheckedAtUtc is null
+                                            || ((s.RetiredAutomationPublicKey is not null || s.AccessError is not null) && s.AccessCheckedAtUtc < checkedBeforeUtc)))
+            .Select(s => s.Id).ToList());
 }
 
 internal sealed class InMemoryDnsZoneRepository : IDnsZoneRepository

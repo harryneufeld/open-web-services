@@ -1,0 +1,151 @@
+@page "/ssh-keys"
+@rendermode InteractiveServer
+@inject UseCaseRunner Runner
+@inject AuthenticationStateProvider Auth
+
+<PageTitle>SSH keys · ows</PageTitle>
+
+<LiveUpdates Topics="[ResourceTopics.SshKeys]" OnChange="LoadAsync" />
+
+<header class="page-header">
+    <div>
+        <h1>SSH keys</h1>
+        <p>Public keys you and your team sign in to servers with. ows keeps only the public half; private keys stay on your devices.</p>
+    </div>
+</header>
+
+@if (_error is not null)
+{
+    <Notice Kind="error">@_error</Notice>
+}
+
+@if (_page is null)
+{
+    <section class="panel"><SkeletonRows Count="3" /></section>
+}
+else
+{
+    <section class="panel" aria-labelledby="mine">
+        <div class="panel-header">
+            <div>
+                <h2 id="mine">Your keys</h2>
+                <p>Give them access per server under SSH access, or pick them when you create a server.</p>
+            </div>
+        </div>
+        @if (_page.Mine.Count > 0)
+        {
+            <KeyTable Keys="_page.Mine" ShowOwner="false" OnRevoke="RevokeAsync" Busy="_busy" />
+        }
+        <div class="panel-body stack">
+            @if (_page.Mine.Count == 0)
+            {
+                <p class="hint">You have no keys yet. Add one so you can sign in to the servers you work on.</p>
+            }
+            @if (_page.CanAddOwn)
+            {
+                <SshKeyAddForm Owner="@_userName" PrimaryAction="@(_page.Mine.Count == 0)" OnAdded="LoadAsync" />
+            }
+            else
+            {
+                <p class="hint">Viewers cannot add keys. Ask an admin for the Member role.</p>
+            }
+        </div>
+    </section>
+
+    <section class="panel" aria-labelledby="team">
+        <div class="panel-header">
+            <div>
+                <h2 id="team">Team and shared keys</h2>
+                <p>Keys of the other members, and shared keys that belong to the tenant, e.g. for a deploy pipeline.</p>
+            </div>
+        </div>
+        @if (_page.Others.Count > 0)
+        {
+            <KeyTable Keys="_page.Others" ShowOwner="true" OnRevoke="RevokeAsync" Busy="_busy" />
+        }
+        @if (_page.Others.Count == 0 || _page.CanAddShared)
+        {
+            <div class="panel-body stack">
+                @if (_page.Others.Count == 0)
+                {
+                    <p class="hint">No other keys yet.</p>
+                }
+                @if (_page.CanAddShared)
+                {
+                    <SshKeyAddForm Shared="true" Owner="shared" OnAdded="LoadAsync" />
+                }
+            </div>
+        }
+    </section>
+
+    <section class="panel" aria-labelledby="activity">
+        <div class="panel-header">
+            <div>
+                <h2 id="activity">Recent activity</h2>
+                <p>Keys added and revoked, access given and removed, and changes to the ows key, newest first.</p>
+            </div>
+        </div>
+        @if (_page.Activity.Count == 0)
+        {
+            <div class="panel-body"><p class="hint">Nothing yet.</p></div>
+        }
+        else
+        {
+            <ul class="list activity">
+                @foreach (var entry in _page.Activity)
+                {
+                    <li>
+                        <span class="grow">@entry.Detail</span>
+                        <span class="subtle nowrap">@entry.Actor · <time datetime="@entry.AtUtc.ToString("o")" title="@entry.AtUtc.ToString("yyyy-MM-dd HH:mm") UTC">@Formatting.Ago(entry.AtUtc)</time></span>
+                    </li>
+                }
+            </ul>
+        }
+    </section>
+}
+
+@code {
+    private SshKeysPage? _page;
+    private string? _error;
+    private string _userName = "ows";
+    private bool _busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!RendererInfo.IsInteractive)
+            return; // prerendering only shows the skeleton; data loads once, when the page is interactive
+        _userName = (await Auth.GetAuthenticationStateAsync()).User.Identity?.Name ?? "ows";
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            _page = await Runner.RunAsync<SshKeys, SshKeysPage>(u => u.GetAsync(CancellationToken.None));
+        }
+        catch (Exception ex) when (UserFacingErrors.Matches(ex))
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private async Task RevokeAsync(Guid keyId)
+    {
+        _busy = true;
+        _error = null;
+        try
+        {
+            await Runner.RunAsync<SshKeys>(u => u.RevokeAsync(keyId, CancellationToken.None));
+            await LoadAsync();
+        }
+        catch (Exception ex) when (UserFacingErrors.Matches(ex))
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

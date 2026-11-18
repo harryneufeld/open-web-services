@@ -260,6 +260,20 @@ namespace OpenWebServices.Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<DateTime?>("AccessCheckedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("AccessError")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<DateTime?>("AutomationKeyCreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("AutomationPublicKey")
+                        .HasMaxLength(2048)
+                        .HasColumnType("character varying(2048)");
+
                     b.Property<DateTime>("CreatedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
@@ -285,6 +299,14 @@ namespace OpenWebServices.Infrastructure.Persistence.Migrations
 
                     b.Property<Guid>("GroupId")
                         .HasColumnType("uuid");
+
+                    b.Property<string>("HostKeyAlgorithm")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<string>("HostKeyFingerprint")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
 
                     b.Property<string>("Image")
                         .IsRequired()
@@ -317,6 +339,10 @@ namespace OpenWebServices.Infrastructure.Persistence.Migrations
                         .HasMaxLength(45)
                         .HasColumnType("character varying(45)");
 
+                    b.Property<string>("RetiredAutomationPublicKey")
+                        .HasMaxLength(2048)
+                        .HasColumnType("character varying(2048)");
+
                     b.Property<string>("ServerType")
                         .IsRequired()
                         .HasMaxLength(64)
@@ -330,6 +356,9 @@ namespace OpenWebServices.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uuid");
 
+                    b.Property<string>("UnknownKeysText")
+                        .HasColumnType("text");
+
                     b.HasKey("Id");
 
                     b.HasIndex("Status");
@@ -339,6 +368,106 @@ namespace OpenWebServices.Infrastructure.Persistence.Migrations
                     b.HasIndex("GroupId", "ExternalId");
 
                     b.ToTable("servers", (string)null);
+                });
+
+            modelBuilder.Entity("OpenWebServices.Domain.SshKeys.ServerKeyGrant", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("AppliedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("GrantedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ServerId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("SshKeyId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SshKeyId");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("ServerId", "SshKeyId")
+                        .IsUnique();
+
+                    b.ToTable("server_key_grants", (string)null);
+                });
+
+            modelBuilder.Entity("OpenWebServices.Domain.SshKeys.SshKey", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Algorithm")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("CreatedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Fingerprint")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("Origin")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)");
+
+                    b.Property<Guid?>("OwnerUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("PublicKey")
+                        .IsRequired()
+                        .HasMaxLength(16384)
+                        .HasColumnType("character varying(16384)");
+
+                    b.Property<DateTime?>("RevokedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("TenantId", "Fingerprint")
+                        .IsUnique()
+                        .HasFilter("\"RevokedAtUtc\" IS NULL");
+
+                    b.HasIndex("TenantId", "OwnerUserId");
+
+                    b.ToTable("ssh_keys", (string)null);
                 });
 
             modelBuilder.Entity("OpenWebServices.Domain.Tenants.Tenant", b =>
@@ -663,6 +792,21 @@ namespace OpenWebServices.Infrastructure.Persistence.Migrations
                     b.HasOne("OpenWebServices.Domain.Providers.ProviderGroup", null)
                         .WithMany()
                         .HasForeignKey("GroupId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("OpenWebServices.Domain.SshKeys.ServerKeyGrant", b =>
+                {
+                    b.HasOne("OpenWebServices.Domain.Servers.Server", null)
+                        .WithMany()
+                        .HasForeignKey("ServerId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("OpenWebServices.Domain.SshKeys.SshKey", null)
+                        .WithMany()
+                        .HasForeignKey("SshKeyId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });

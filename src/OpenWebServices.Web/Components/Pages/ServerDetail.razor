@@ -76,6 +76,11 @@ else
         </div>
     </section>
 
+    @if (server.Status != ServerStatus.Deleting)
+    {
+        <ServerAccessPanel @ref="_access" ServerId="Id" OnChanged="LoadServerAsync" />
+    }
+
     @if (server.ExternalId is not null && server.Status != ServerStatus.Deleting)
     {
         <ServerLabelsPanel ServerId="Id" />
@@ -90,10 +95,10 @@ else
                 <p>Docker Compose apps installed over SSH.</p>
             </div>
         </div>
-        @if (server.EncryptedSshPrivateKey is null)
+        @if (!server.HasAutomationKey)
         {
             <div class="panel-body">
-                <Notice>Apps can only be installed on servers created in ows. Imported servers have no SSH key ows can use.</Notice>
+                <Notice>ows needs access to this server to install apps. An admin can give it access under SSH access.</Notice>
             </div>
         }
         else
@@ -155,6 +160,7 @@ else
 
 @code {
     private ServerView? _view;
+    private ServerAccessPanel? _access;
     private IReadOnlyList<AppInstall> _installs = [];
     private string? _error;
     private string _templateId = "";
@@ -172,6 +178,13 @@ else
     }
 
     private async Task LoadAsync()
+    {
+        await LoadServerAsync();
+        if (_access is not null)
+            await _access.ReloadAsync();
+    }
+
+    private async Task LoadServerAsync()
     {
         try
         {

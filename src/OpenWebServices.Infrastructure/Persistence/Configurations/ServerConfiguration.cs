@@ -23,6 +23,15 @@ internal sealed class ServerConfiguration : IEntityTypeConfiguration<Server>
         builder.Property(s => s.Status).HasConversion<string>().HasMaxLength(16);
         builder.Property(s => s.PublicIpv4).HasMaxLength(45);
         builder.Property(s => s.FailureReason).HasMaxLength(2000);
+        builder.Property(s => s.AutomationPublicKey).HasMaxLength(2048);
+        builder.Property(s => s.RetiredAutomationPublicKey).HasMaxLength(2048);
+        builder.Property(s => s.HostKeyAlgorithm).HasMaxLength(16);
+        builder.Property(s => s.HostKeyFingerprint).HasMaxLength(64);
+        builder.Property(s => s.AccessError).HasMaxLength(2000);
+        builder.Property<string?>("UnknownKeysText");
+        builder.Ignore(s => s.UnknownAuthorizedKeys);
+        builder.Ignore(s => s.HasAutomationKey);
+        builder.Ignore(s => s.CanManageKeys);
         builder.Ignore(s => s.IsReachable);
         builder.Ignore(s => s.CanInstallApps);
         builder.Ignore(s => s.IsTransitioning);

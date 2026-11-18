@@ -66,9 +66,12 @@ public static class DependencyInjection
         services.AddScoped<IServerRepository, ServerRepository>();
         services.AddScoped<IDnsZoneRepository, DnsZoneRepository>();
         services.AddScoped<IAppInstallRepository, AppInstallRepository>();
+        services.AddScoped<ISshKeyRepository, SshKeyRepository>();
+        services.AddScoped<IServerKeyGrantRepository, ServerKeyGrantRepository>();
 
         services.AddHostedService<GroupSyncWorker>();
         services.AddHostedService<AppInstallWorker>();
+        services.AddHostedService<ServerAccessWorker>();
         return services;
     }
 
@@ -133,6 +136,12 @@ public static class DependencyInjection
             logger.LogInformation("Re-encrypted {Count} secrets with tenant-bound keys.", upgraded);
         foreach (var item in unreadable)
             logger.LogWarning("Could not decrypt the {Secret} with the current key ring; enter it again.", item);
+
+        var backfilled = await AutomationKeyBackfill.RunAsync(db,
+            scope.ServiceProvider.GetRequiredService<ISecretProtector>(),
+            scope.ServiceProvider.GetRequiredService<ISshKeyGenerator>(), ct);
+        if (backfilled > 0)
+            logger.LogInformation("Recorded the ows public key of {Count} servers.", backfilled);
     }
 }
 

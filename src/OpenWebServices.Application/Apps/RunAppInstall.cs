@@ -42,12 +42,20 @@ public sealed class RunAppInstall(
     private async Task InstallAsync(AppInstall install, Server server, AppTemplate template, CancellationToken ct)
     {
         if (server.EncryptedSshPrivateKey is null || server.PublicIpv4 is null)
-            throw new InvalidOperationException("The server has no SSH key or public IP.");
-        var target = new RemoteTarget(server.PublicIpv4, secrets.Unprotect(server.EncryptedSshPrivateKey, server.TenantId, SecretPurposes.SshPrivateKey));
+            throw new InvalidOperationException("ows has no access to this server or it has no public IP.");
+        var target = new RemoteTarget(server.PublicIpv4,
+            secrets.Unprotect(server.EncryptedSshPrivateKey, server.TenantId, SecretPurposes.SshPrivateKey),
+            PinnedHostKey: server.HostKeyFingerprint);
         var directory = $"/opt/apps/{template.Id}";
 
         install.AppendLog("Waiting for SSH and server bootstrap (Docker)...");
-        await shell.WaitUntilReadyAsync(target, SshReadyTimeout, ct);
+        var hostKey = await shell.WaitUntilReadyAsync(target, SshReadyTimeout, ct);
+        if (server.HostKeyFingerprint is null)
+        {
+            server.PinHostKey(hostKey.Algorithm, hostKey.Fingerprint);
+            install.AppendLog($"Pinned the server's host key {hostKey.Algorithm} {hostKey.Fingerprint}");
+            target = target with { PinnedHostKey = hostKey.Fingerprint };
+        }
         await RunStepAsync(install, target, "cloud-init status --wait", ct);
 
         install.AppendLog($"Uploading {template.Name} to {directory}");

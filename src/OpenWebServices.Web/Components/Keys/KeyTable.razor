@@ -1,0 +1,88 @@
+@* Read-only list of SSH keys with copy and an in-place revoke confirmation. *@
+
+<div class="table-wrap">
+    <table class="stack keys">
+        <thead>
+            <tr>
+                <th>Name</th>
+                @if (ShowOwner)
+                {
+                    <th>Owner</th>
+                }
+                <th>Fingerprint</th>
+                <th class="num">Servers</th>
+                <th>Added</th>
+                <th><span class="sr-only">Actions</span></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var key in Keys)
+            {
+                <tr>
+                    <td>
+                        <span class="key-name">@key.Name</span>
+                        @if (key.Origin == SshKeyOrigin.GeneratedInBrowser)
+                        {
+                            <span class="secondary">Generated in the browser</span>
+                        }
+                        else if (key.Origin == SshKeyOrigin.Adopted)
+                        {
+                            <span class="secondary">Found on a server</span>
+                        }
+                    </td>
+                    @if (ShowOwner)
+                    {
+                        <td data-label="Owner">
+                            @if (key.IsShared)
+                            {
+                                <span class="tag accent">Shared</span>
+                            }
+                            else
+                            {
+                                @key.OwnerName
+                            }
+                        </td>
+                    }
+                    <td data-label="Fingerprint" class="wrap fingerprint-cell"><span class="fingerprint"><span class="algo">@key.Algorithm</span><span class="mono">@key.Fingerprint</span></span></td>
+                    <td data-label="Servers" class="num">@key.ServerCount</td>
+                    <td data-label="Added">@key.CreatedAtUtc.ToString("yyyy-MM-dd")</td>
+                    <td class="actions">
+                        @if (_confirm == key.Id)
+                        {
+                            <span class="confirm">
+                                <span class="hint">@(key.ServerCount > 0 ? $"Removes it from {key.ServerCount} server(s)." : "It cannot be used afterwards.")</span>
+                                <button class="btn btn-sm" @onclick="() => _confirm = null">Cancel</button>
+                                <button class="btn btn-sm btn-danger-solid" disabled="@Busy" @onclick="() => RevokeAsync(key.Id)">Revoke</button>
+                            </span>
+                        }
+                        else
+                        {
+                            <CopyButton Value="@key.PublicKey" Label="public key" />
+                            @if (key.CanRevoke)
+                            {
+                                <button class="btn btn-sm btn-ghost" disabled="@Busy" @onclick="() => _confirm = key.Id" title="Revoke this key">
+                                    <Icon Name="trash" /><span class="sr-only">Revoke @key.Name</span>
+                                </button>
+                            }
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+@code {
+    private Guid? _confirm;
+
+    [Parameter, EditorRequired] public IReadOnlyList<SshKeyView> Keys { get; set; } = [];
+    [Parameter] public bool ShowOwner { get; set; }
+    [Parameter] public bool Busy { get; set; }
+    [Parameter] public EventCallback<Guid> OnRevoke { get; set; }
+
+    private async Task RevokeAsync(Guid id)
+    {
+        await OnRevoke.InvokeAsync(id);
+        _confirm = null;
+    }
+}

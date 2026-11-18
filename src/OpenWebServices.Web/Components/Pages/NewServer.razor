@@ -197,6 +197,28 @@ else
                         }
                     </select>
                 </label>
+                <div class="field span-2">
+                    <span class="field-label">SSH keys</span>
+                    @if (_keys.Count > 0)
+                    {
+                        <div class="choice-group">
+                            @foreach (var key in _keys)
+                            {
+                                <label class="check key-choice">
+                                    <input type="checkbox" checked="@_chosenKeys.Contains(key.Id)" @onchange="e => ToggleKey(key.Id, e.Value is true)" />
+                                    <span>@key.Name</span>
+                                    <span class="subtle">@key.Owner</span>
+                                    <span class="fingerprint subtle"><span class="algo">@key.Algorithm</span><span class="mono">@key.Fingerprint</span></span>
+                                </label>
+                            }
+                        </div>
+                        <span class="hint">These can sign in as root. ows adds its own key as well; change access later under SSH access.</span>
+                    }
+                    else
+                    {
+                        <span class="hint">You have no SSH keys yet, so only ows could sign in. <a href="/ssh-keys" target="_blank" rel="noopener">Add a key</a> (opens a new tab), then <button type="button" class="link-btn" @onclick="LoadKeysAsync">reload the list</button>.</span>
+                    }
+                </div>
             </div>
         </div>
         <div class="panel-footer">
@@ -240,6 +262,8 @@ else
     private bool _busy;
 
     private Guid _selectedGroupId;
+    private IReadOnlyList<KeyOption> _keys = [];
+    private HashSet<Guid> _chosenKeys = [];
 
     // Offers merged across groups; the list filters the raw offers and merges what is left.
     private IReadOnlyList<OfferRow>? _rows;
@@ -305,6 +329,7 @@ else
             return; // prerendering only shows the skeleton; data loads once, when the page is interactive
         try
         {
+            await LoadKeysAsync();
             var result = await Runner.RunAsync<GetServerOffers, OffersResult>(q => q.ExecuteAsync(CancellationToken.None));
             (_offers, _groupErrors) = (result.Offers, result.Errors);
             _rows = OfferRow.Merge(_offers);
@@ -314,6 +339,28 @@ else
             _error = ex.Message;
             (_offers, _rows) = ([], []);
         }
+    }
+
+    private async Task LoadKeysAsync()
+    {
+        try
+        {
+            _keys = await Runner.RunAsync<SshKeys, IReadOnlyList<KeyOption>>(u => u.ListOptionsAsync(CancellationToken.None));
+            if (_chosenKeys.Count == 0)
+                _chosenKeys = _keys.Where(k => k.IsMine).Select(k => k.Id).ToHashSet();
+        }
+        catch (Exception ex) when (UserFacingErrors.Matches(ex))
+        {
+            _keys = [];
+        }
+    }
+
+    private void ToggleKey(Guid id, bool on)
+    {
+        if (on)
+            _chosenKeys.Add(id);
+        else
+            _chosenKeys.Remove(id);
     }
 
     private void Select(OfferRow row)
@@ -333,7 +380,8 @@ else
         _error = null;
         try
         {
-            var command = new ProvisionServerCommand(offer.GroupId, _name.Trim(), offer.Location, offer.TypeName, _image, offer.Billing?.Id);
+            var command = new ProvisionServerCommand(offer.GroupId, _name.Trim(), offer.Location, offer.TypeName, _image, offer.Billing?.Id,
+                [.. _keys.Where(k => _chosenKeys.Contains(k.Id)).Select(k => k.Id)]);
             var id = await Runner.RunAsync<ProvisionServer, Guid>(u => u.ExecuteAsync(command, CancellationToken.None));
             Navigation.NavigateTo($"/servers/{id}");
         }

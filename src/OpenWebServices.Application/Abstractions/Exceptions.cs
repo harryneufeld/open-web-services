@@ -19,3 +19,14 @@ public sealed class ProviderException(string message, Exception? inner = null) :
 
 public sealed class OfferUnavailableException(string offer)
     : Exception($"The selected offer '{offer}' does not exist or is not available right now.");
+
+/// <summary>
+/// A server presented a different SSH host key than the one pinned on first contact. Either the server was
+/// reinstalled, or someone is intercepting the connection; ows refuses to send anything until a user decides.
+/// </summary>
+public sealed class HostKeyMismatchException(string host, string expected, string actual)
+    : Exception($"{host} presented the host key {actual}, but ows pinned {expected}. If the server was reinstalled, " +
+                "trust the new host key under SSH access; otherwise someone may be intercepting the connection.");
+
+/// <summary>ows could not reach or sign in to a server over SSH.</summary>
+public sealed class RemoteAccessException(string message, Exception? inner = null) : Exception(message, inner);
