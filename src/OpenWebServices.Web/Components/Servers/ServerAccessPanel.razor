@@ -118,7 +118,7 @@
                                     <CopyButton Value="@automation.PublicKey" Label="ows public key" />
                                     @if (view.CanEdit && view.IsReachable)
                                     {
-                                        <button class="btn btn-sm" disabled="@(_busy is not null)" @onclick="RotateAsync" title="Replace the ows key with a new one">
+                                        <button class="btn btn-sm" disabled="@(_busy is not null)" @onclick="@(() => _confirm = "rotate-ows")" title="Replace the ows key with a new one">
                                             @if (_busy == "rotate") { <span class="spinner"></span><text>Rotating…</text> } else { <Icon Name="rotate" /><text>Rotate</text> }
                                         </button>
                                     }
@@ -269,6 +269,16 @@
     }
 </section>
 
+<ConfirmDialog Open="@(_confirm == "rotate-ows")" Title="@($"Rotate the ows key of {ServerName}?")" ConfirmLabel="Rotate key"
+               Busy="@(_busy == "rotate")" OnConfirm="RotateAsync" OnCancel="@(() => _confirm = null)">
+    <p>ows replaces the key it signs in with:</p>
+    <ul>
+        <li>a new key is added to the server and tested,</li>
+        <li>then the current key is removed and ows forgets it.</li>
+    </ul>
+    <p>Anything else that uses the current ows key stops working. If a step fails, the current key stays in use.</p>
+</ConfirmDialog>
+
 @code {
     private ServerAccessView? _view;
     private string? _error;
@@ -281,6 +291,8 @@
     private string? _restoredKey;
 
     [Parameter, EditorRequired] public Guid ServerId { get; set; }
+
+    [Parameter] public string ServerName { get; set; } = "this server";
 
     /// <summary>Raised after a change, so the page can refresh what depends on ows access (e.g. apps).</summary>
     [Parameter] public EventCallback OnChanged { get; set; }
@@ -331,7 +343,11 @@
 
     private Task CheckAsync() => RunAsync("check", () => Runner.RunAsync<ServerAccess>(u => u.CheckAsync(ServerId, CancellationToken.None)));
 
-    private Task RotateAsync() => RunAsync("rotate", () => Runner.RunAsync<ServerAccess>(u => u.RotateAutomationKeyAsync(ServerId, CancellationToken.None)));
+    private async Task RotateAsync()
+    {
+        await RunAsync("rotate", () => Runner.RunAsync<ServerAccess>(u => u.RotateAutomationKeyAsync(ServerId, CancellationToken.None)));
+        _confirm = null; // closes the dialog; a failure shows in the panel
+    }
 
     private Task RevokeAutomationAsync() =>
         RunAsync("revoke-ows", () => Runner.RunAsync<ServerAccess>(u => u.RevokeAutomationKeyAsync(ServerId, CancellationToken.None)));

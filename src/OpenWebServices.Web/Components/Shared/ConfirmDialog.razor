@@ -1,0 +1,56 @@
+@* A short modal confirmation for actions that deserve a pause. Native <dialog>: focus stays inside, Esc cancels. *@
+@inject IJSRuntime JS
+
+<dialog @ref="_dialog" class="dialog" aria-labelledby="@($"{_id}-title")" aria-describedby="@($"{_id}-body")" @onclose="OnClosedAsync">
+    <form method="dialog" class="dialog-card" @onsubmit:preventDefault>
+        <h2 id="@($"{_id}-title")">@Title</h2>
+        <div class="dialog-body" id="@($"{_id}-body")">@ChildContent</div>
+        <div class="dialog-actions">
+            <button type="button" class="btn" autofocus disabled="@Busy" @onclick="CancelAsync">Cancel</button>
+            <button type="button" class="btn @(Danger ? "btn-danger-solid" : "btn-primary")" disabled="@Busy" @onclick="OnConfirm">
+                @if (Busy)
+                {
+                    <span class="spinner"></span>
+                }
+                @ConfirmLabel
+            </button>
+        </div>
+    </form>
+</dialog>
+
+@code {
+    private readonly string _id = "dlg-" + Guid.NewGuid().ToString("N")[..8];
+    private ElementReference _dialog;
+    private bool _shown;
+
+    [Parameter] public bool Open { get; set; }
+    [Parameter, EditorRequired] public string Title { get; set; } = "";
+    [Parameter, EditorRequired] public string ConfirmLabel { get; set; } = "Confirm";
+    [Parameter] public bool Danger { get; set; }
+
+    /// <summary>The action is running: both buttons are disabled and the dialog stays open until Open turns false.</summary>
+    [Parameter] public bool Busy { get; set; }
+
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public EventCallback OnConfirm { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (Open == _shown)
+            return;
+        _shown = Open;
+        await JS.InvokeVoidAsync(Open ? "owsDialog.show" : "owsDialog.close", _dialog);
+    }
+
+    private Task CancelAsync() => OnCancel.InvokeAsync();
+
+    // Esc or a programmatic close: tell the parent, unless it closed the dialog itself.
+    private async Task OnClosedAsync()
+    {
+        if (!_shown)
+            return;
+        _shown = false;
+        await OnCancel.InvokeAsync();
+    }
+}

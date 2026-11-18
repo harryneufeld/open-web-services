@@ -78,7 +78,7 @@ else
 
     @if (server.Status != ServerStatus.Deleting)
     {
-        <ServerAccessPanel @ref="_access" ServerId="Id" OnChanged="LoadServerAsync" />
+        <ServerAccessPanel @ref="_access" ServerId="Id" ServerName="@server.Name" OnChanged="LoadServerAsync" />
     }
 
     @if (server.ExternalId is not null && server.Status != ServerStatus.Deleting)
