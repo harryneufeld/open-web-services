@@ -57,6 +57,7 @@
                         <div class="wide-fact">
                             <dt>Sign in</dt>
                             <dd class="with-copy"><code class="nowrap">ssh root@@@view.Host</code><CopyButton Value="@($"ssh root@{view.Host}")" Label="SSH command" /></dd>
+                            <dd class="hint">ssh tries every key it knows. To check that one key has access, use <code>ssh -o IdentitiesOnly=yes -i &lt;key file&gt; root@@@view.Host</code>.</dd>
                         </div>
                         <div class="wide-fact">
                             <dt>Host key</dt>

@@ -86,7 +86,8 @@ public interface IServerRepository
 
     /// <summary>
     /// Running servers ows holds a key for whose authorized_keys need attention: never checked, a retired automation
-    /// key to remove, or a last check older than <paramref name="checkedBeforeUtc"/> that failed.
+    /// key to remove, a last check older than <paramref name="checkedBeforeUtc"/> that failed, or a key of the tenant
+    /// revoked after the last check (revoked keys are removed from every server, granted or not).
     /// </summary>
     Task<IReadOnlyList<Guid>> ListServersNeedingAccessCheckAsync(DateTime checkedBeforeUtc, CancellationToken ct);
 }

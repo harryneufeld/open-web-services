@@ -208,10 +208,14 @@ internal sealed class InMemoryServerRepository : IServerRepository
     public Task<IReadOnlyList<Guid>> ListGroupsWithTransitioningServersAsync(CancellationToken ct) =>
         Task.FromResult<IReadOnlyList<Guid>>(Items.Where(s => s.IsTransitioning).Select(s => s.GroupId).Distinct().ToList());
 
+    /// <summary>Keys the access-check query looks at, as the database query does.</summary>
+    public List<OpenWebServices.Domain.SshKeys.SshKey> Keys { get; set; } = [];
+
     public Task<IReadOnlyList<Guid>> ListServersNeedingAccessCheckAsync(DateTime checkedBeforeUtc, CancellationToken ct) =>
         Task.FromResult<IReadOnlyList<Guid>>(Items
             .Where(s => s.CanManageKeys && (s.AccessCheckedAtUtc is null
-                                            || ((s.RetiredAutomationPublicKey is not null || s.AccessError is not null) && s.AccessCheckedAtUtc < checkedBeforeUtc)))
+                                            || ((s.RetiredAutomationPublicKey is not null || s.AccessError is not null) && s.AccessCheckedAtUtc < checkedBeforeUtc)
+                                            || Keys.Any(k => k.TenantId == s.TenantId && k.RevokedAtUtc > s.AccessCheckedAtUtc)))
             .Select(s => s.Id).ToList());
 }
 

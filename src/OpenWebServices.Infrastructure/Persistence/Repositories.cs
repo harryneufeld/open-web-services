@@ -78,7 +78,9 @@ internal sealed class ServerRepository(AppDbContext db) : IServerRepository
             .Where(s => s.Status == ServerStatus.Running && s.PublicIpv4 != null && s.EncryptedSshPrivateKey != null)
             .Where(s => s.AccessCheckedAtUtc == null
                         || (s.RetiredAutomationPublicKey != null && s.AccessCheckedAtUtc < checkedBeforeUtc)
-                        || (s.AccessError != null && s.AccessCheckedAtUtc < checkedBeforeUtc))
+                        || (s.AccessError != null && s.AccessCheckedAtUtc < checkedBeforeUtc)
+                        // A key was revoked since the last check: it may sit on this server without a grant.
+                        || db.SshKeys.Any(k => k.TenantId == s.TenantId && k.RevokedAtUtc > s.AccessCheckedAtUtc))
             .Select(s => s.Id)
             .ToListAsync(ct);
 }

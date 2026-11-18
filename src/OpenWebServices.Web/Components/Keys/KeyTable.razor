@@ -50,7 +50,7 @@
                         @if (_confirm == key.Id)
                         {
                             <span class="confirm">
-                                <span class="hint">@(key.ServerCount > 0 ? $"Removes it from {key.ServerCount} server(s)." : "It cannot be used afterwards.")</span>
+                                <span class="hint">ows removes it from every server it has access to. Remove it yourself anywhere else.</span>
                                 <button class="btn btn-sm" @onclick="() => _confirm = null">Cancel</button>
                                 <button class="btn btn-sm btn-danger-solid" disabled="@Busy" @onclick="() => RevokeAsync(key.Id)">Revoke</button>
                             </span>

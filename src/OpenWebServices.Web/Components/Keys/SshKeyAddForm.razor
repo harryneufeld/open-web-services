@@ -64,11 +64,27 @@
     }
     @if (_generated is { } done)
     {
+        var commands = KeyCommands.For(_os, done.FileName);
         <Notice Kind="success">
-            <p><strong>@done.Name</strong> is added. The private key was saved to your downloads as <code>@done.FileName</code>.</p>
-            <p>Move it into place and protect it with a passphrase:</p>
-            <div class="command with-copy"><code>@done.Commands</code><CopyButton Value="@done.Commands" Label="commands" /></div>
+            <p><strong>@done.Name</strong> is added. The private key was saved to your downloads as <code>@done.FileName</code>.
+                It has no access to any server yet: give it access in a server's SSH access panel.</p>
+            <div class="segmented" role="radiogroup" aria-label="Your operating system">
+                @foreach (var os in KeyCommands.All)
+                {
+                    <label class="@(os == _os ? "on" : null)">
+                        <input type="radio" name="@($"os-{_id}")" checked="@(os == _os)" @onchange="() => _os = os" />@KeyCommands.Label(os)
+                    </label>
+                }
+            </div>
+            <p>Move it into your SSH folder, restrict it to your account and protect it with a passphrase:</p>
+            <div class="command with-copy"><code>@commands.Install</code><CopyButton Value="@commands.Install" Label="commands" /></div>
+            <p>Test it once it has access. <code>IdentitiesOnly</code> makes ssh use only this key, not others it knows:</p>
+            <div class="command with-copy"><code>@commands.Test</code><CopyButton Value="@commands.Test" Label="test command" /></div>
         </Notice>
+    }
+    else if (!Shared)
+    {
+        <p class="hint">A new key can't sign in anywhere until you give it access in a server's SSH access panel.</p>
     }
 
     <div class="actions">
@@ -93,7 +109,7 @@
 @code {
     private enum Mode { Generate, Paste }
 
-    private sealed record Generated(string Name, string FileName, string Commands);
+    private sealed record Generated(string Name, string FileName);
 
     private readonly string _id = Guid.NewGuid().ToString("N")[..8];
     private Mode _mode = Mode.Generate;
@@ -104,6 +120,7 @@
     private string? _error;
     private Generated? _generated;
     private bool _busy;
+    private ClientOs _os = ClientOs.Unix;
 
     /// <summary>A tenant key without owner (Admin role).</summary>
     [Parameter] public bool Shared { get; set; }
@@ -179,8 +196,8 @@
                 var comment = $"{FileSafe(Owner)}-{FileSafe(name)}";
                 var publicKey = await JS.InvokeAsync<string>("owsGenerateSshKey", comment, fileName);
                 await Runner.RunAsync<SshKeys, Guid>(u => u.AddAsync(name, publicKey, SshKeyOrigin.GeneratedInBrowser, Shared, CancellationToken.None));
-                _generated = new Generated(name, fileName,
-                    $"mv ~/Downloads/{fileName} ~/.ssh/ && chmod 600 ~/.ssh/{fileName} && ssh-keygen -p -f ~/.ssh/{fileName}");
+                _generated = new Generated(name, fileName);
+                _os = await JS.InvokeAsync<string>("owsClientOs") == "windows" ? ClientOs.Windows : ClientOs.Unix;
             }
             _name = "";
             _publicKey = "";

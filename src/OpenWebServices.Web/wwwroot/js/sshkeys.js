@@ -191,3 +191,9 @@
     window.owsEd25519PublicKey = ed25519PublicKey;
     window.owsSha512 = sha512;
 })();
+
+// Which commands to suggest first after a key was generated; the user can switch.
+window.owsClientOs = () => {
+    const platform = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || navigator.userAgent;
+    return /win/i.test(platform) ? "windows" : "unix";
+};

@@ -124,6 +124,26 @@ public class ServerAccessTests
     }
 
     [Fact]
+    public async Task Revoking_a_key_that_was_never_granted_still_sweeps_every_managed_server()
+    {
+        var (sut, keys, context) = Sut();
+        await sut.CheckAsync(_server.Id, CancellationToken.None); // a clean, recent check
+        var key = AddKey(2, context.UserId);
+        _shell.AuthorizedKeys += TestKeys.Ed25519Line(2, "copied by hand") + "\n";
+        _servers.Keys = _keys.Items;
+        Assert.DoesNotContain(_server.Id, await _servers.ListServersNeedingAccessCheckAsync(_clock.UtcNow.AddMinutes(-2), CancellationToken.None));
+
+        _clock.UtcNow = _clock.UtcNow.AddSeconds(30);
+        await keys.RevokeAsync(key.Id, CancellationToken.None);
+        var due = await _servers.ListServersNeedingAccessCheckAsync(_clock.UtcNow.AddMinutes(-2), CancellationToken.None);
+        Assert.Contains(_server.Id, due);
+
+        await sut.ApplyInBackgroundAsync(_server.Id, CancellationToken.None);
+        Assert.False(_shell.HasKey(TestKeys.Ed25519Line(2)));
+        Assert.DoesNotContain(_server.Id, await _servers.ListServersNeedingAccessCheckAsync(_clock.UtcNow.AddMinutes(-2), CancellationToken.None));
+    }
+
+    [Fact]
     public async Task Unknown_keys_are_listed_and_can_be_removed_or_adopted()
     {
         _shell.AuthorizedKeys += TestKeys.Ed25519Line(8, "mallory") + "\n" + TestKeys.Ed25519Line(9, "old-laptop") + "\n";
