@@ -80,7 +80,23 @@ Private networks need a vRack attached to the Public Cloud project; without one 
 activates a network in the server's region when needed and gives each region its own /24 pool of the network's range.
 Reverse DNS names must resolve to the address (an A or AAAA record) before OVHcloud accepts them.
 
-### Firewall
+### Volumes
+
+| Method | Route                                                        | Used for                                   |
+| ------ | ------------------------------------------------------------ | ------------------------------------------ |
+| GET    | `/cloud/project/{serviceName}/volume`                        | Listing volumes                            |
+| POST   | `/cloud/project/{serviceName}/volume`                        | Creating a volume                          |
+| GET    | `/cloud/project/{serviceName}/volume/*`                      | Volume status while it changes             |
+| PUT    | `/cloud/project/{serviceName}/volume/*`                      | Renaming a volume                          |
+| POST   | `/cloud/project/{serviceName}/volume/*`                      | Attaching, detaching and growing           |
+| DELETE | `/cloud/project/{serviceName}/volume/*`                      | Deleting a volume                          |
+| GET    | `/cloud/project/{serviceName}/region/*`                      | Volume types offered in a region           |
+| PUT    | `/cloud/project/{serviceName}/region/*`                      | Changing a volume's type                   |
+
+Volumes are created in the server's region and availability zone. OVHcloud grows detached volumes only, so ows
+unmounts, detaches, grows and re-attaches a volume when its size goes up, then grows the filesystem. Without SSH
+access to the server ows cannot unmount it and asks you to detach it first.
+
 
 API v1 has no security groups for Public Cloud instances, so ows uses the **Edge Network Firewall** on the instance's
 public IPv4 (`/ip/{ip}/firewall`, covered by the `/ip/*` rules above). That firewall is stateless, filters IPv4 only,

@@ -50,6 +50,7 @@ public static class DependencyInjection
         .AddScoped<ServerNetworks>()
         .AddScoped<ServerFirewalls>()
         .AddScoped<ServerLabels>()
+        .AddScoped<ServerVolumes>()
         .AddScoped<GetServerOffers>()
         .AddScoped<DnsQueries>()
         .AddScoped<CreateDnsZone>()

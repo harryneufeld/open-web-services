@@ -28,7 +28,8 @@ internal sealed record OvhInstance(
     OvhImage? Image,
     List<OvhIpAddress>? IpAddresses,
     string? ImageId,
-    string? PlanCode);
+    string? PlanCode,
+    string? AvailabilityZone = null);
 
 internal sealed record OvhCreateSshKey(string Name, string PublicKey);
 
@@ -185,3 +186,26 @@ internal sealed record OvhCreateFirewallRule(
     OvhRange? DestinationPortRange = null,
     long? SourcePort = null,
     OvhTcpOption? TcpOption = null);
+
+// Block storage volumes (/cloud/project/{id}/volume)
+
+internal sealed record OvhVolume(
+    string Id,
+    string Name,
+    int Size,
+    string Region,
+    List<string>? AttachedTo,
+    string? Type,
+    string? Status);
+
+internal sealed record OvhCreateVolume(string Region, int Size, string Type, string Name, string? AvailabilityZone);
+
+internal sealed record OvhVolumeInstance(string InstanceId);
+
+internal sealed record OvhVolumeSize(int Size);
+
+internal sealed record OvhVolumeName(string Name);
+
+internal sealed record OvhVolumeType(string Name);
+
+internal sealed record OvhVolumeRetype(string Type);

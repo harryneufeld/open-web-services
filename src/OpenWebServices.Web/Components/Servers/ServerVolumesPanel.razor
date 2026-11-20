@@ -1,0 +1,474 @@
+@* Block storage volumes of one server, read live from the provider. Names, sizes and types are edited in place. *@
+@using OpenWebServices.Domain
+@inject UseCaseRunner Runner
+
+<section class="panel" aria-labelledby="volumes">
+    <div class="panel-header">
+        <div>
+            <h2 id="volumes">Volumes</h2>
+            <p>Extra disks that keep their data when the server is rebuilt or deleted. ows mounts them for you.</p>
+        </div>
+        <button class="btn btn-ghost btn-sm" disabled="@_loading" @onclick="LoadAsync">
+            @if (_loading)
+            {
+                <span class="spinner"></span>
+            }
+            else
+            {
+                <Icon Name="refresh" />
+            }
+            Reload
+        </button>
+    </div>
+    @if (_error is not null)
+    {
+        <div class="panel-body"><Notice Kind="error">@_error</Notice></div>
+    }
+    @if (_message is not null)
+    {
+        <div class="panel-body"><Notice Kind="success">@_message</Notice></div>
+    }
+    @if (_view is null)
+    {
+        <SkeletonRows Count="2" />
+    }
+    else if (_view.Options is not { } options)
+    {
+        <div class="panel-body"><Notice>@_view.Unavailable</Notice></div>
+    }
+    else
+    {
+        var showType = options.Types.Count > 1;
+        <div class="panel-body stack">
+            <div class="edit-grid volumes @(showType ? "" : "no-type")">
+                <div class="row head">
+                    <span>Name</span><span>Size (GB)</span>
+                    @if (showType)
+                    {
+                        <span>Type</span>
+                    }
+                    <span>Mounted at</span><span class="num">Monthly, net</span><span></span>
+                </div>
+                @if (_view.Attached.Count == 0)
+                {
+                    <p class="hint wide-row">No volumes attached yet. Add one in the last row.</p>
+                }
+                @foreach (var row in _view.Attached)
+                {
+                    var volume = row.Volume;
+                    var draft = Draft(volume);
+                    var changed = IsChanged(volume, draft);
+                    <div class="row">
+                        <div data-label="Name">
+                            <input value="@draft.Name" @oninput="e => SetDraft(volume, draft with { Name = e.Value?.ToString() ?? string.Empty })"
+                                   maxlength="@ServerVolumes.MaxNameLength" spellcheck="false" aria-label="Name of @volume.Name" disabled="@volume.IsBusy" />
+                        </div>
+                        <div data-label="Size (GB)">
+                            <input type="number" class="num" min="@volume.SizeGb" max="@options.MaxSizeGb" step="1" value="@draft.SizeGb"
+                                   @oninput="e => SetDraft(volume, draft with { SizeGb = ParseSize(e.Value, volume.SizeGb) })"
+                                   aria-label="Size of @volume.Name in GB" disabled="@volume.IsBusy" />
+                        </div>
+                        @if (showType)
+                        {
+                            <div data-label="Type">
+                                @if (options.CanChangeType)
+                                {
+                                    <select value="@draft.Type" @onchange="e => SetDraft(volume, draft with { Type = e.Value?.ToString() })"
+                                            aria-label="Type of @volume.Name" disabled="@volume.IsBusy">
+                                        @foreach (var type in options.Types)
+                                        {
+                                            <option value="@type.Id" title="@type.Description">@type.Label</option>
+                                        }
+                                        @if (volume.Type is { } current && options.Types.All(t => t.Id != current))
+                                        {
+                                            <option value="@current">@current</option>
+                                        }
+                                    </select>
+                                }
+                                else
+                                {
+                                    <span class="cell-text">@TypeLabel(options, volume.Type)</span>
+                                }
+                            </div>
+                        }
+                        <div data-label="Mounted at" class="cell-text">
+                            @if (volume.IsBusy)
+                            {
+                                <StatusBadge Text="@volume.Status" />
+                            }
+                            else if (row.Mount is { MountPoint: { } mountPoint } mount)
+                            {
+                                <span class="mono">@mountPoint</span>
+                                @if (mount.SizeBytes is { } size && mount.UsedBytes is { } used && size > 0)
+                                {
+                                    <span class="secondary">@Formatting.Gigabytes(used) of @Formatting.Gigabytes(size) used</span>
+                                    <span class="usage" role="img" aria-label="@Percent(used, size) % used"><span style="width:@Percent(used, size)%"></span></span>
+                                }
+                            }
+                            else if (row.Mount is { DevicePresent: true } && _view.CanMount)
+                            {
+                                <div class="mount-form">
+                                    <input class="mono" value="@MountDraft(volume)" @oninput="e => _mountDrafts[volume.ExternalId] = e.Value?.ToString() ?? string.Empty"
+                                           spellcheck="false" aria-label="Mount point for @volume.Name" />
+                                    <button class="btn btn-sm" disabled="@_busy" @onclick="() => MountAsync(volume)">Mount</button>
+                                </div>
+                                <span class="secondary">@(row.Mount.Filesystem is { } fs ? $"Holds {fs}, not mounted" : "Empty: ows formats it as ext4")</span>
+                            }
+                            else if (row.Mount is { DevicePresent: false })
+                            {
+                                <span class="subtle">The server does not see it yet</span>
+                            }
+                            else
+                            {
+                                <span class="subtle">@(volume.DevicePath ?? "–")</span>
+                            }
+                        </div>
+                        <div data-label="Monthly, net" class="num cell-text">
+                            @{
+                                var now = row.MonthlyPriceNet;
+                                var next = changed ? ServerVolumes.Price(options, draft.Type, draft.SizeGb) : null;
+                            }
+                            @(now is { } price ? Formatting.Money(price, options.Currency) : "–")
+                            @if (next is { } nextPrice && nextPrice != now)
+                            {
+                                <span class="secondary">→ @Formatting.Money(nextPrice, options.Currency)</span>
+                            }
+                        </div>
+                        <div class="row-actions">
+                            @if (changed)
+                            {
+                                <button class="btn btn-sm btn-ghost" disabled="@_busy" @onclick="() => _drafts.Remove(volume.ExternalId)">Undo</button>
+                                <button class="btn btn-sm btn-primary" disabled="@_busy" @onclick="() => SaveAsync(volume)">
+                                    @if (_busy && _savingId == volume.ExternalId)
+                                    {
+                                        <span class="spinner"></span>
+                                    }
+                                    Save
+                                </button>
+                            }
+                            else if (_confirm is { } confirm && confirm.Id == volume.ExternalId)
+                            {
+                                <button class="btn btn-sm" @onclick="() => _confirm = null">Cancel</button>
+                                @if (confirm.Delete)
+                                {
+                                    <button class="btn btn-sm btn-danger-solid" disabled="@_busy" @onclick="() => DeleteAsync(volume)">Delete data</button>
+                                }
+                                else
+                                {
+                                    <button class="btn btn-sm btn-danger-solid" disabled="@_busy" @onclick="() => DetachAsync(volume)">Detach</button>
+                                }
+                            }
+                            else
+                            {
+                                <button class="btn btn-sm btn-ghost" disabled="@(_busy || volume.IsBusy)" @onclick="() => _confirm = (volume.ExternalId, false)">Detach…</button>
+                                <button class="btn btn-sm btn-ghost" disabled="@(_busy || volume.IsBusy)" @onclick="() => _confirm = (volume.ExternalId, true)" title="Delete">
+                                    <Icon Name="trash" /><span class="sr-only">Delete @volume.Name</span>
+                                </button>
+                            }
+                        </div>
+                        @if (_rowHints.GetValueOrDefault(volume.ExternalId) is { } rowHint)
+                        {
+                            <p class="field-error wide-row" role="alert">@rowHint</p>
+                        }
+                        else if (changed && draft.SizeGb > volume.SizeGb)
+                        {
+                            <p class="hint wide-row">@GrowHint(options)</p>
+                        }
+                        else if (_confirm is { } shown && shown.Id == volume.ExternalId)
+                        {
+                            <p class="hint wide-row">@ConfirmHint(volume, shown.Delete)</p>
+                        }
+                    </div>
+                    <div class="divider"></div>
+                }
+
+                <div class="row add">
+                    <div data-label="Name">
+                        <input @bind="_newName" @bind:event="oninput" placeholder="data" maxlength="@ServerVolumes.MaxNameLength"
+                               spellcheck="false" aria-label="Name of the new volume" />
+                    </div>
+                    <div data-label="Size (GB)">
+                        <input type="number" class="num" min="@options.MinSizeGb" max="@options.MaxSizeGb" step="1" @bind="_newSize" @bind:event="oninput"
+                               aria-label="Size of the new volume in GB" />
+                    </div>
+                    @if (showType)
+                    {
+                        <div data-label="Type">
+                            <select @bind="_newType" aria-label="Type of the new volume">
+                                @foreach (var type in options.Types)
+                                {
+                                    <option value="@type.Id" title="@type.Description">@type.Label</option>
+                                }
+                            </select>
+                        </div>
+                    }
+                    <div data-label="Mounted at">
+                        @if (_view.CanMount)
+                        {
+                            <input class="mono" @bind="_newMountPoint" @bind:event="oninput" placeholder="@VolumeMounts.DefaultMountPoint(_newName.Length > 0 ? _newName : "data")"
+                                   spellcheck="false" aria-label="Mount point of the new volume" />
+                        }
+                        else
+                        {
+                            <span class="subtle">Mounted by the provider where it can</span>
+                        }
+                    </div>
+                    <div data-label="Monthly, net" class="num cell-text">
+                        @(ServerVolumes.Price(options, _newType, _newSize) is { } newPrice ? Formatting.Money(newPrice, options.Currency) : "–")
+                    </div>
+                    <div class="row-actions">
+                        <button class="btn btn-sm" disabled="@_busy" @onclick="CreateAsync">
+                            @if (_busy && _savingId == NewRowId)
+                            {
+                                <span class="spinner"></span>
+                            }
+                            else
+                            {
+                                <Icon Name="plus" />
+                            }
+                            Add volume
+                        </button>
+                    </div>
+                    @if (_addHint is not null)
+                    {
+                        <p class="field-error wide-row" role="alert">@_addHint</p>
+                    }
+                    else if (showType && options.Types.FirstOrDefault(t => t.Id == _newType)?.Description is { } description)
+                    {
+                        <p class="hint wide-row">@description</p>
+                    }
+                </div>
+            </div>
+
+            @if (_view.Attachable.Count > 0)
+            {
+                <section class="panel-section" aria-labelledby="attach-volume">
+                    <h3 id="attach-volume">Attach an existing volume</h3>
+                    <div class="inline-form">
+                        <label class="field"><span>Volume</span>
+                            <select @bind="_attachId">
+                                <option value="">Choose a volume</option>
+                                @foreach (var volume in _view.Attachable)
+                                {
+                                    <option value="@volume.ExternalId">@volume.Name (@volume.SizeGb GB@(showType ? ", " + TypeLabel(options, volume.Type) : ""))</option>
+                                }
+                            </select>
+                        </label>
+                        @if (_view.CanMount)
+                        {
+                            <label class="field"><span>Mount at</span>
+                                <input class="mono" @bind="_attachMountPoint" @bind:event="oninput" spellcheck="false"
+                                       placeholder="@VolumeMounts.DefaultMountPoint(_view.Attachable.FirstOrDefault(v => v.ExternalId == _attachId)?.Name ?? "data")" />
+                            </label>
+                        }
+                        <button class="btn" disabled="@_busy" @onclick="AttachAsync">Attach</button>
+                    </div>
+                    @if (_attachHint is not null)
+                    {
+                        <p class="field-error" role="alert">@_attachHint</p>
+                    }
+                    <p class="hint">Detached volumes in @options.Location. Their data stays as it is; empty ones are formatted as ext4.</p>
+                </section>
+            }
+
+            <p class="hint">
+                @if (_view.MountNote is { } note)
+                {
+                    @note
+                }
+                else
+                {
+                    @($"{options.MinSizeGb}–{options.MaxSizeGb} GB per volume, in {options.Location}. Volumes can grow, never shrink; ows grows the filesystem with them.")
+                }
+            </p>
+        </div>
+    }
+</section>
+
+@code {
+    private const string NewRowId = "+new";
+    private ServerVolumeView? _view;
+    private string? _error;
+    private string? _message;
+    private bool _loading;
+    private bool _busy;
+    private string? _savingId;
+    private readonly Dictionary<string, VolumeChange> _drafts = [];
+    private readonly Dictionary<string, string> _mountDrafts = [];
+    private readonly Dictionary<string, string> _rowHints = [];
+    private (string Id, bool Delete)? _confirm;
+    private string _newName = "";
+    private int _newSize;
+    private string? _newType;
+    private string _newMountPoint = "";
+    private string? _addHint;
+    private string _attachId = "";
+    private string _attachMountPoint = "";
+    private string? _attachHint;
+
+    [Parameter, EditorRequired] public Guid ServerId { get; set; }
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        try
+        {
+            _view = await Runner.RunAsync<ServerVolumes, ServerVolumeView>(u => u.GetAsync(ServerId, CancellationToken.None));
+            if (_view.Options is { } options)
+            {
+                if (_newSize < options.MinSizeGb)
+                    _newSize = Math.Max(options.MinSizeGb, 20);
+                if (_newType is null || options.Types.All(t => t.Id != _newType))
+                    _newType = options.Types.FirstOrDefault()?.Id;
+            }
+        }
+        catch (Exception ex) when (UserFacingErrors.Matches(ex))
+        {
+            _error = ex.Message;
+            _view ??= new ServerVolumeView(null, [], [], false, null, "Volumes could not be loaded.");
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private VolumeChange Draft(ProviderVolume volume) =>
+        _drafts.GetValueOrDefault(volume.ExternalId) ?? new VolumeChange(volume.Name, volume.SizeGb, volume.Type);
+
+    private void SetDraft(ProviderVolume volume, VolumeChange draft)
+    {
+        _drafts[volume.ExternalId] = draft;
+        _rowHints.Remove(volume.ExternalId);
+        _confirm = null;
+    }
+
+    private static bool IsChanged(ProviderVolume volume, VolumeChange draft) =>
+        draft.Name.Trim() != volume.Name || draft.SizeGb != volume.SizeGb || (draft.Type is not null && draft.Type != volume.Type);
+
+    private static int ParseSize(object? value, int fallback) =>
+        int.TryParse(value?.ToString(), out var size) ? size : fallback;
+
+    private string MountDraft(ProviderVolume volume) =>
+        _mountDrafts.GetValueOrDefault(volume.ExternalId) ?? VolumeMounts.DefaultMountPoint(volume.Name);
+
+    private static string TypeLabel(VolumeOptions options, string? type) =>
+        options.Types.FirstOrDefault(t => t.Id == type)?.Label ?? type ?? "Standard";
+
+    private static int Percent(long used, long size) => (int)Math.Clamp(Math.Round(used * 100m / size), 0, 100);
+
+    private string GrowHint(VolumeOptions options) => options.ResizesWhileAttached
+        ? "Grows while in use. ows grows the filesystem afterwards. Volumes cannot shrink again."
+        : _view?.CanMount == true
+            ? "This provider grows detached volumes only: ows unmounts and detaches it, grows it, and mounts it again. Programs using it pause for about a minute. Volumes cannot shrink again."
+            : "This provider grows detached volumes only, and ows cannot sign in to unmount it. Detach it yourself first.";
+
+    private string ConfirmHint(ProviderVolume volume, bool delete) => (delete, _view?.CanMount == true) switch
+    {
+        (true, _) => $"Deletes {volume.Name} and all data on it. This cannot be undone.",
+        (false, true) => $"ows unmounts {volume.Name} and detaches it. Its data stays on the volume, and you can attach it again later.",
+        (false, false) => $"Unmount {volume.Name} on the server first: ows cannot sign in to do it. Its data stays on the volume.",
+    };
+
+    private Task SaveAsync(ProviderVolume volume)
+    {
+        var draft = Draft(volume);
+        if (draft.SizeGb < volume.SizeGb)
+        {
+            _rowHints[volume.ExternalId] = $"Volumes can only grow. {volume.Name} has {volume.SizeGb} GB.";
+            return Task.CompletedTask;
+        }
+
+        return RunAsync(volume.ExternalId, async () =>
+        {
+            _message = await Runner.RunAsync<ServerVolumes, string?>(u => u.SaveAsync(ServerId, volume.ExternalId, draft, CancellationToken.None));
+            _drafts.Remove(volume.ExternalId);
+        }, rowHint: true);
+    }
+
+    private Task MountAsync(ProviderVolume volume) => RunAsync(volume.ExternalId, async () =>
+    {
+        _message = await Runner.RunAsync<ServerVolumes, string>(u => u.MountAsync(ServerId, volume.ExternalId, MountDraft(volume), CancellationToken.None));
+        _mountDrafts.Remove(volume.ExternalId);
+    }, rowHint: true);
+
+    private Task DetachAsync(ProviderVolume volume) => RunAsync(volume.ExternalId, async () =>
+    {
+        await Runner.RunAsync<ServerVolumes>(u => u.DetachAsync(ServerId, volume.ExternalId, CancellationToken.None));
+        _message = $"{volume.Name} is detached. Its data stays on the volume.";
+        _confirm = null;
+    }, rowHint: true);
+
+    private Task DeleteAsync(ProviderVolume volume) => RunAsync(volume.ExternalId, async () =>
+    {
+        await Runner.RunAsync<ServerVolumes>(u => u.DeleteAsync(ServerId, volume.ExternalId, CancellationToken.None));
+        _message = $"{volume.Name} is deleted.";
+        _confirm = null;
+    }, rowHint: true);
+
+    private Task CreateAsync()
+    {
+        _addHint = string.IsNullOrWhiteSpace(_newName) ? "Enter a name for the new volume, such as data."
+            : _view?.Options is { } o && (_newSize < o.MinSizeGb || _newSize > o.MaxSizeGb) ? $"Size must be between {o.MinSizeGb} and {o.MaxSizeGb} GB."
+            : null;
+        if (_addHint is not null)
+            return Task.CompletedTask;
+
+        var mountPoint = string.IsNullOrWhiteSpace(_newMountPoint) ? null : _newMountPoint;
+        return RunAsync(NewRowId, async () =>
+        {
+            _message = await Runner.RunAsync<ServerVolumes, string>(u => u.CreateAsync(ServerId, _newName, _newSize, _newType, mountPoint, CancellationToken.None));
+            (_newName, _newMountPoint, _addHint) = ("", "", null);
+        }, addHint: true);
+    }
+
+    private Task AttachAsync()
+    {
+        _attachHint = string.IsNullOrEmpty(_attachId) ? "Choose the volume to attach." : null;
+        if (_attachHint is not null)
+            return Task.CompletedTask;
+
+        var mountPoint = string.IsNullOrWhiteSpace(_attachMountPoint) ? null : _attachMountPoint;
+        return RunAsync(_attachId, async () =>
+        {
+            _message = await Runner.RunAsync<ServerVolumes, string>(u => u.AttachAsync(ServerId, _attachId, mountPoint, CancellationToken.None));
+            (_attachId, _attachMountPoint) = ("", "");
+        }, attachHint: true);
+    }
+
+    /// <summary>Runs a change; problems with one row or form show next to it, anything else at the top.</summary>
+    private async Task RunAsync(string id, Func<Task> action, bool rowHint = false, bool addHint = false, bool attachHint = false)
+    {
+        _busy = true;
+        _savingId = id;
+        _error = null;
+        _message = null;
+        _rowHints.Remove(id);
+        try
+        {
+            await action();
+            await LoadAsync();
+        }
+        catch (DomainException ex) when (rowHint || addHint || attachHint)
+        {
+            if (rowHint)
+                _rowHints[id] = ex.Message;
+            else if (addHint)
+                _addHint = ex.Message;
+            else
+                _attachHint = ex.Message;
+        }
+        catch (Exception ex) when (UserFacingErrors.Matches(ex))
+        {
+            _error = ex.Message;
+            await LoadAsync();
+        }
+        finally
+        {
+            _busy = false;
+            _savingId = null;
+        }
+    }
+}
