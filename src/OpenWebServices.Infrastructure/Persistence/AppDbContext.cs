@@ -6,6 +6,7 @@ using OpenWebServices.Domain.Apps;
 using OpenWebServices.Domain.Dns;
 using OpenWebServices.Domain.Providers;
 using OpenWebServices.Domain.Servers;
+using OpenWebServices.Domain.SshKeys;
 using OpenWebServices.Domain.Tenants;
 using OpenWebServices.Infrastructure.Identity;
 
@@ -27,6 +28,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options, AccessC
     public DbSet<Server> Servers => Set<Server>();
     public DbSet<DnsZone> DnsZones => Set<DnsZone>();
     public DbSet<AppInstall> AppInstalls => Set<AppInstall>();
+    public DbSet<SshKey> SshKeys => Set<SshKey>();
+    public DbSet<ServerKeyGrant> ServerKeyGrants => Set<ServerKeyGrant>();
 
     // Read by the query filters; EF evaluates them per query, not once per model.
     private bool SeesAllTenants => access.IsSystem;
@@ -47,6 +50,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options, AccessC
         modelBuilder.Entity<Server>().HasQueryFilter(e => SeesAllTenants || e.TenantId == CurrentTenantId);
         modelBuilder.Entity<DnsZone>().HasQueryFilter(e => SeesAllTenants || e.TenantId == CurrentTenantId);
         modelBuilder.Entity<AppInstall>().HasQueryFilter(e => SeesAllTenants || e.TenantId == CurrentTenantId);
+        modelBuilder.Entity<SshKey>().HasQueryFilter(e => SeesAllTenants || e.TenantId == CurrentTenantId);
+        modelBuilder.Entity<ServerKeyGrant>().HasQueryFilter(e => SeesAllTenants || e.TenantId == CurrentTenantId);
     }
 }
 

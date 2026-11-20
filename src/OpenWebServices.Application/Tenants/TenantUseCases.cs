@@ -184,7 +184,14 @@ public sealed class ChangeMemberRole(
 
 /// <summary>Removes a member, or lets a member leave. A tenant always keeps at least one owner.</summary>
 public sealed class RemoveMember(
-    AccessContext access, ITenantMembershipRepository memberships, IUserDirectory users, IAuditLog audit, IUnitOfWork unitOfWork)
+    AccessContext access,
+    ITenantMembershipRepository memberships,
+    IUserDirectory users,
+    ISshKeyRepository sshKeys,
+    IServerKeyGrantRepository grants,
+    IAuditLog audit,
+    IUnitOfWork unitOfWork,
+    IClock clock)
 {
     public async Task ExecuteAsync(Guid userId, CancellationToken ct)
     {
@@ -201,6 +208,11 @@ public sealed class RemoveMember(
         memberships.Remove(membership);
         var name = (await users.FindAsync(userId, ct))?.UserName ?? userId.ToString();
         audit.Add(new AuditEntry(AuditTypes.MemberRemoved, leaving ? $"{name} left" : $"{name} removed", access.UserId, tenantId));
+
+        // Whoever leaves takes their server access with them: their keys are revoked and removed from every server.
+        var revoked = await Access.SshKeys.RevokeAllOfAsync(sshKeys, grants, tenantId, userId, clock.UtcNow, ct);
+        if (revoked > 0)
+            audit.Add(new AuditEntry(SshAuditTypes.KeyRevoked, $"Revoked {revoked} SSH key(s) of {name}, who left the tenant", access.UserId, tenantId));
         await unitOfWork.SaveChangesAsync(ct);
     }
 }

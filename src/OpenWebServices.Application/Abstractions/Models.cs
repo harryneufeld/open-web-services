@@ -158,7 +158,13 @@ public sealed record DnsRecordSet(
     IReadOnlyList<string> Values,
     bool IsManagedByProvider = false);
 
-public sealed record RemoteTarget(string Host, string PrivateKeyPem, string User = "root");
+/// <param name="PinnedHostKey">The host key fingerprint the server must present; null accepts the first one seen.</param>
+public sealed record RemoteTarget(string Host, string PrivateKeyPem, string User = "root", string? PinnedHostKey = null);
+
+/// <summary>A server's SSH host key as seen on connect.</summary>
+/// <param name="Algorithm">e.g. "ED25519".</param>
+/// <param name="Fingerprint">"SHA256:…", as OpenSSH prints it.</param>
+public sealed record HostKey(string Algorithm, string Fingerprint);
 
 public sealed record CommandResult(int ExitCode, string Output)
 {

@@ -1,0 +1,225 @@
+@* Adds a public key: generated in this browser (private key downloaded, never sent) or pasted from an existing pair. *@
+@using System.Text.RegularExpressions
+@inject UseCaseRunner Runner
+@inject IJSRuntime JS
+
+<div class="panel-section">
+    <h3>@(Shared ? "Add a shared key" : "Add a key")</h3>
+    <div class="segmented" role="radiogroup" aria-label="How to add the key">
+        <label class="@(_mode == Mode.Generate ? "on" : null)">
+            <input type="radio" name="@($"mode-{_id}")" checked="@(_mode == Mode.Generate)" @onchange="() => Switch(Mode.Generate)" />
+            <Icon Name="key" />Generate a new key pair
+        </label>
+        <label class="@(_mode == Mode.Paste ? "on" : null)">
+            <input type="radio" name="@($"mode-{_id}")" checked="@(_mode == Mode.Paste)" @onchange="() => Switch(Mode.Paste)" />
+            <Icon Name="copy" />Paste a public key
+        </label>
+    </div>
+
+    <div class="key-form">
+        <label class="field">
+            <span>Name</span>
+            <input @bind="_name" @bind:event="oninput" @onblur="() => ValidateName()" maxlength="@SshKey.MaxNameLength"
+                   placeholder="@(Shared ? "deploy-pipeline" : "laptop-2026")" spellcheck="false" aria-invalid="@(_nameError is not null)"
+                   aria-describedby="@($"name-help-{_id}")" />
+            @if (_nameError is not null)
+            {
+                <p class="field-error" id="@($"name-help-{_id}")">@_nameError</p>
+            }
+            else
+            {
+                <span class="hint" id="@($"name-help-{_id}")">Where the private key lives, so you know which one to revoke later.</span>
+            }
+        </label>
+
+        @if (_mode == Mode.Paste)
+        {
+            <label class="field">
+                <span>Public key</span>
+                <textarea rows="3" @bind="_publicKey" @bind:event="oninput" @onblur="() => ValidateKey()" spellcheck="false" autocomplete="off"
+                          placeholder="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA… you@laptop" aria-invalid="@(_keyError is not null)"
+                          aria-describedby="@($"key-help-{_id}")"></textarea>
+                @if (_keyError is not null)
+                {
+                    <p class="field-error" id="@($"key-help-{_id}")">@_keyError</p>
+                }
+                else
+                {
+                    <span class="hint" id="@($"key-help-{_id}")">The line from the <code>.pub</code> file, e.g. <code>cat ~/.ssh/id_ed25519.pub</code>. Never paste the private key.</span>
+                }
+            </label>
+        }
+        else
+        {
+            <p class="hint">
+                Your browser creates an Ed25519 key pair and downloads the private key as a file.
+                ows receives only the public key and cannot show the private key again.
+            </p>
+        }
+    </div>
+
+    @if (_error is not null)
+    {
+        <Notice Kind="error">@_error</Notice>
+    }
+    @if (_generated is { } done)
+    {
+        var commands = KeyCommands.For(_os, done.FileName);
+        <Notice Kind="success">
+            <p><strong>@done.Name</strong> is added. The private key was saved to your downloads as <code>@done.FileName</code>.
+                It has no access to any server yet: give it access in a server's SSH access panel.</p>
+            <div class="segmented" role="radiogroup" aria-label="Your operating system">
+                @foreach (var os in KeyCommands.All)
+                {
+                    <label class="@(os == _os ? "on" : null)">
+                        <input type="radio" name="@($"os-{_id}")" checked="@(os == _os)" @onchange="() => _os = os" />@KeyCommands.Label(os)
+                    </label>
+                }
+            </div>
+            <p>Move it into your SSH folder, restrict it to your account and protect it with a passphrase:</p>
+            <div class="command with-copy"><code>@commands.Install</code><CopyButton Value="@commands.Install" Label="commands" /></div>
+            <p>Test it once it has access. <code>IdentitiesOnly</code> makes ssh use only this key, not others it knows:</p>
+            <div class="command with-copy"><code>@commands.Test</code><CopyButton Value="@commands.Test" Label="test command" /></div>
+        </Notice>
+    }
+    else if (!Shared)
+    {
+        <p class="hint">A new key can't sign in anywhere until you give it access in a server's SSH access panel.</p>
+    }
+
+    <div class="actions">
+        <button class="btn @(PrimaryAction ? "btn-primary" : null)" disabled="@_busy" @onclick="SubmitAsync">
+            @if (_busy)
+            {
+                <span class="spinner"></span>
+                <text>@(_mode == Mode.Generate ? "Generating…" : "Adding…")</text>
+            }
+            else if (_mode == Mode.Generate)
+            {
+                <Icon Name="download" /><text>Generate and download</text>
+            }
+            else
+            {
+                <Icon Name="plus" /><text>Add key</text>
+            }
+        </button>
+    </div>
+</div>
+
+@code {
+    private enum Mode { Generate, Paste }
+
+    private sealed record Generated(string Name, string FileName);
+
+    private readonly string _id = Guid.NewGuid().ToString("N")[..8];
+    private Mode _mode = Mode.Generate;
+    private string _name = "";
+    private string _publicKey = "";
+    private string? _nameError;
+    private string? _keyError;
+    private string? _error;
+    private Generated? _generated;
+    private bool _busy;
+    private ClientOs _os = ClientOs.Unix;
+
+    /// <summary>A tenant key without owner (Admin role).</summary>
+    [Parameter] public bool Shared { get; set; }
+
+    /// <summary>Show the button as the page's primary action, e.g. while the user has no key yet.</summary>
+    [Parameter] public bool PrimaryAction { get; set; }
+
+    /// <summary>The user name, used in the generated key's comment.</summary>
+    [Parameter] public string Owner { get; set; } = "ows";
+
+    [Parameter] public EventCallback OnAdded { get; set; }
+
+    private void Switch(Mode mode)
+    {
+        _mode = mode;
+        _keyError = null;
+        _error = null;
+    }
+
+    private bool ValidateName()
+    {
+        try
+        {
+            SshKey.ValidName(_name);
+            _nameError = null;
+        }
+        catch (OpenWebServices.Domain.DomainException ex)
+        {
+            _nameError = ex.Message;
+        }
+        return _nameError is null;
+    }
+
+    private bool ValidateKey()
+    {
+        if (_mode != Mode.Paste || _publicKey.Length == 0 && _keyError is null)
+            return true;
+        try
+        {
+            SshPublicKey.Parse(_publicKey);
+            _keyError = null;
+        }
+        catch (OpenWebServices.Domain.DomainException ex)
+        {
+            _keyError = ex.Message;
+        }
+        return _keyError is null;
+    }
+
+    private async Task SubmitAsync()
+    {
+        _error = null;
+        _generated = null;
+        var nameOk = ValidateName();
+        if (_mode == Mode.Paste && _publicKey.Trim().Length == 0)
+            _keyError = "Paste the public key, the line from the .pub file.";
+        else
+            ValidateKey();
+        if (!nameOk || _keyError is not null)
+            return;
+
+        _busy = true;
+        try
+        {
+            var name = _name.Trim();
+            if (_mode == Mode.Paste)
+            {
+                await Runner.RunAsync<SshKeys, Guid>(u => u.AddAsync(name, _publicKey, SshKeyOrigin.Pasted, Shared, CancellationToken.None));
+            }
+            else
+            {
+                var fileName = $"id_ed25519_{FileSafe(name)}";
+                var comment = $"{FileSafe(Owner)}-{FileSafe(name)}";
+                var publicKey = await JS.InvokeAsync<string>("owsGenerateSshKey", comment, fileName);
+                await Runner.RunAsync<SshKeys, Guid>(u => u.AddAsync(name, publicKey, SshKeyOrigin.GeneratedInBrowser, Shared, CancellationToken.None));
+                _generated = new Generated(name, fileName);
+                _os = await JS.InvokeAsync<string>("owsClientOs") == "windows" ? ClientOs.Windows : ClientOs.Unix;
+            }
+            _name = "";
+            _publicKey = "";
+            await OnAdded.InvokeAsync();
+        }
+        catch (JSException)
+        {
+            _error = "Your browser could not create the key. Create one with ssh-keygen -t ed25519 and paste the .pub file instead.";
+        }
+        catch (Exception ex) when (UserFacingErrors.Matches(ex))
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private static string FileSafe(string value)
+    {
+        var safe = Regex.Replace(value.Trim().ToLowerInvariant(), "[^a-z0-9._-]+", "-").Trim('-', '.');
+        return safe.Length == 0 ? "key" : safe.Length > 40 ? safe[..40] : safe;
+    }
+}

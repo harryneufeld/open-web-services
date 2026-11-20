@@ -2,6 +2,7 @@ using OpenWebServices.Domain.Apps;
 using OpenWebServices.Domain.Dns;
 using OpenWebServices.Domain.Providers;
 using OpenWebServices.Domain.Servers;
+using OpenWebServices.Domain.SshKeys;
 
 namespace OpenWebServices.Application.Abstractions;
 
@@ -33,9 +34,35 @@ public static class SecretPurposes
     public const string SshPrivateKey = "ssh-private-key";
 }
 
+/// <summary>Creates the key pairs ows itself signs in with. Users' key pairs are never generated on the server.</summary>
 public interface ISshKeyGenerator
 {
     SshKeyPair Generate(string comment);
+
+    /// <summary>The authorized_keys line of an existing private key.</summary>
+    string PublicKeyOf(string privateKeyPem, string comment);
+}
+
+public interface ISshKeyRepository
+{
+    void Add(SshKey key);
+    Task<SshKey?> FindAsync(Guid id, CancellationToken ct);
+
+    /// <summary>All keys of the current tenant, revoked ones included.</summary>
+    Task<IReadOnlyList<SshKey>> ListAsync(CancellationToken ct);
+
+    Task<IReadOnlyList<SshKey>> ListByOwnerAsync(Guid tenantId, Guid ownerUserId, CancellationToken ct);
+}
+
+public interface IServerKeyGrantRepository
+{
+    void Add(ServerKeyGrant grant);
+    void Remove(ServerKeyGrant grant);
+    Task<IReadOnlyList<ServerKeyGrant>> ListForServerAsync(Guid serverId, CancellationToken ct);
+    Task<IReadOnlyList<ServerKeyGrant>> ListForKeyAsync(Guid sshKeyId, CancellationToken ct);
+
+    /// <summary>Servers with a grant change that has not reached the server yet.</summary>
+    Task<IReadOnlyList<Guid>> ListServersWithPendingChangesAsync(CancellationToken ct);
 }
 
 public interface IProviderGroupRepository
@@ -56,6 +83,13 @@ public interface IServerRepository
 
     /// <summary>Groups that have servers in Provisioning, Starting or Stopping state.</summary>
     Task<IReadOnlyList<Guid>> ListGroupsWithTransitioningServersAsync(CancellationToken ct);
+
+    /// <summary>
+    /// Running servers ows holds a key for whose authorized_keys need attention: never checked, a retired automation
+    /// key to remove, a last check older than <paramref name="checkedBeforeUtc"/> that failed, or a key of the tenant
+    /// revoked after the last check (revoked keys are removed from every server, granted or not).
+    /// </summary>
+    Task<IReadOnlyList<Guid>> ListServersNeedingAccessCheckAsync(DateTime checkedBeforeUtc, CancellationToken ct);
 }
 
 public interface IDnsZoneRepository
@@ -84,7 +118,10 @@ public interface IAppTemplateCatalog
 /// <summary>Runs commands on a remote server over SSH.</summary>
 public interface IRemoteShell
 {
-    Task WaitUntilReadyAsync(RemoteTarget target, TimeSpan timeout, CancellationToken ct);
+    /// <summary>Waits until ows can sign in, and returns the host key the server presented.</summary>
+    /// <exception cref="HostKeyMismatchException">The target has a pinned host key and the server presented another.</exception>
+    Task<HostKey> WaitUntilReadyAsync(RemoteTarget target, TimeSpan timeout, CancellationToken ct);
+
     Task<CommandResult> RunAsync(RemoteTarget target, string command, CancellationToken ct);
     Task UploadTextAsync(RemoteTarget target, string remotePath, string content, CancellationToken ct);
 }
@@ -101,6 +138,7 @@ public static class ResourceTopics
     public const string Servers = "servers";
     public const string DnsZones = "dns-zones";
     public const string AppInstalls = "app-installs";
+    public const string SshKeys = "ssh-keys";
 }
 
 /// <summary>A persisted change to a resource, published after it is saved.</summary>

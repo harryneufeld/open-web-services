@@ -163,7 +163,7 @@ public class TenantMembershipTests
         var (owner, access) = Member("owner", TenantRole.Owner);
 
         await Assert.ThrowsAsync<DomainException>(() =>
-            new RemoveMember(access, _store, _users, _audit, new FakeUnitOfWork()).ExecuteAsync(owner.Id, CancellationToken.None));
+            new RemoveMember(access, _store, _users, new InMemorySshKeyRepository(), new InMemoryGrantRepository(), _audit, new FakeUnitOfWork(), _clock).ExecuteAsync(owner.Id, CancellationToken.None));
         await Assert.ThrowsAsync<DomainException>(() =>
             new ChangeMemberRole(access, _store, _users, _audit, new FakeUnitOfWork()).ExecuteAsync(owner.Id, TenantRole.Admin, CancellationToken.None));
     }
@@ -177,7 +177,7 @@ public class TenantMembershipTests
         await Assert.ThrowsAsync<ForbiddenException>(() =>
             new ChangeMemberRole(admin, _store, _users, _audit, new FakeUnitOfWork()).ExecuteAsync(owner.Id, TenantRole.Viewer, CancellationToken.None));
         await Assert.ThrowsAsync<ForbiddenException>(() =>
-            new RemoveMember(admin, _store, _users, _audit, new FakeUnitOfWork()).ExecuteAsync(owner.Id, CancellationToken.None));
+            new RemoveMember(admin, _store, _users, new InMemorySshKeyRepository(), new InMemoryGrantRepository(), _audit, new FakeUnitOfWork(), _clock).ExecuteAsync(owner.Id, CancellationToken.None));
     }
 
     [Fact]
@@ -291,8 +291,12 @@ public class PermissionTests
     [Fact]
     public async Task Viewers_cannot_create_servers()
     {
-        var sut = new ProvisionServer(TestData.Access(TenantRole.Viewer), new InMemoryGroupRepository(),
-            new FakeConnectionFactory(new FakeConnection()), new InMemoryServerRepository(), new FakeKeyGenerator(),
+        var viewer = TestData.Access(TenantRole.Viewer);
+        var grants = new InMemoryGrantRepository();
+        var keys = new OpenWebServices.Application.Access.SshKeys(viewer, new InMemorySshKeyRepository(), grants,
+            new FakeUserDirectory(), new FakeAuditLog(), new FakeUnitOfWork(), new FakeClock());
+        var sut = new ProvisionServer(viewer, new InMemoryGroupRepository(),
+            new FakeConnectionFactory(new FakeConnection()), new InMemoryServerRepository(), keys, grants, new FakeKeyGenerator(),
             new ReversingSecretProtector(), new FakeSyncScheduler(), new FakeUnitOfWork(), new FakeClock());
 
         await Assert.ThrowsAsync<ForbiddenException>(() =>

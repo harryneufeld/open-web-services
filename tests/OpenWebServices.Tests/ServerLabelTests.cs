@@ -37,7 +37,7 @@ public class ServerLabelTests
     {
         var connection = new FakeConnection();
         var servers = new InMemoryServerRepository();
-        var server = Server.Provision(TestData.TenantId, Guid.NewGuid(), "web-1", "fsn1", "cx23", "ubuntu-24.04", 4m, "EUR", "key", DateTime.UtcNow);
+        var server = Server.Provision(TestData.TenantId, Guid.NewGuid(), "web-1", "fsn1", "cx23", "ubuntu-24.04", 4m, "EUR", "key", TestKeys.Ed25519Line(200), DateTime.UtcNow);
         server.AttachProviderResources("1", "2", "203.0.113.10");
         servers.Add(server);
         var labels = new ServerLabels(TestData.Access(), new FakeConnectionFactory(connection), servers);

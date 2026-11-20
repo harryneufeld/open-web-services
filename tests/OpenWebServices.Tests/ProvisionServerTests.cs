@@ -1,5 +1,8 @@
 using OpenWebServices.Application.Abstractions;
+using OpenWebServices.Application.Access;
 using OpenWebServices.Application.Servers;
+using OpenWebServices.Domain;
+using OpenWebServices.Domain.SshKeys;
 using OpenWebServices.Domain.Providers;
 using OpenWebServices.Domain.Servers;
 using OpenWebServices.Domain.Tenants;
@@ -20,10 +23,15 @@ public class ProvisionServerTests
 
     private readonly InMemoryGroupRepository _groups = new() { Items = { Group } };
 
+    private readonly InMemorySshKeyRepository _keys = new();
+    private readonly InMemoryGrantRepository _grants = new();
+    private readonly AccessContext _access = TestData.Access(TenantRole.Member);
+
     private ProvisionServer CreateSut() => new(
-        TestData.Access(TenantRole.Member), _groups,
-        new FakeConnectionFactory(_connection), _servers, new FakeKeyGenerator(),
-        new ReversingSecretProtector(), _scheduler, _unitOfWork, new FakeClock());
+        _access, _groups,
+        new FakeConnectionFactory(_connection), _servers,
+        new SshKeys(_access, _keys, _grants, new FakeUserDirectory(), new FakeAuditLog(), _unitOfWork, new FakeClock()), _grants,
+        new FakeKeyGenerator(), new ReversingSecretProtector(), _scheduler, _unitOfWork, new FakeClock());
 
     private static ProvisionServerCommand Command(string type = "cx23") =>
         new(GroupId, "web-1", "fsn1", type, "ubuntu-24.04");
@@ -41,9 +49,34 @@ public class ProvisionServerTests
         Assert.Equal("7", server.ExternalSshKeyId);
         Assert.Equal("203.0.113.10", server.PublicIpv4);
         Assert.Equal(4.00m, server.MonthlyPriceNet);
-        Assert.Equal("enc:PRIVATE", server.EncryptedSshPrivateKey);
-        Assert.Equal(ServerBootstrapScript.Content, Provider.LastRequest!.UserData);
+        Assert.Equal("enc:PRIVATE-1", server.EncryptedSshPrivateKey);
+        Assert.Equal(ServerAccessWriter.AutomationLine(TestKeys.Ed25519Line(1)), server.AutomationPublicKey);
+        Assert.Equal(ServerBootstrapScript.Build([server.AutomationPublicKey!]), Provider.LastRequest!.UserData);
         Assert.Equal([GroupId], _scheduler.Requested);
+    }
+
+    [Fact]
+    public async Task Chosen_keys_get_access_through_cloud_init()
+    {
+        var mine = SshKey.Add(TestData.TenantId, _access.UserId, "laptop", SshPublicKey.Parse(TestKeys.Ed25519Line(50)), SshKeyOrigin.Pasted, _access.UserId, DateTime.UtcNow);
+        _keys.Add(mine);
+
+        await CreateSut().ExecuteAsync(Command() with { SshKeyIds = [mine.Id] }, CancellationToken.None);
+
+        var grant = Assert.Single(_grants.Items);
+        Assert.Equal(mine.Id, grant.SshKeyId);
+        Assert.True(grant.IsPending); // confirmed by the first access check once the server runs
+        Assert.Contains(mine.ToAuthorizedKeysLine(), Provider.LastRequest!.UserData, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Other_members_keys_cannot_be_chosen()
+    {
+        var theirs = SshKey.Add(TestData.TenantId, Guid.NewGuid(), "theirs", SshPublicKey.Parse(TestKeys.Ed25519Line(51)), SshKeyOrigin.Pasted, null, DateTime.UtcNow);
+        _keys.Add(theirs);
+
+        await Assert.ThrowsAsync<DomainException>(() => CreateSut().ExecuteAsync(Command() with { SshKeyIds = [theirs.Id] }, CancellationToken.None));
+        Assert.Empty(_servers.Items);
     }
 
     [Fact]
