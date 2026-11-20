@@ -76,6 +76,11 @@ else
         </div>
     </section>
 
+    @if (server.ExternalId is not null && server.Status != ServerStatus.Deleting)
+    {
+        <ServerRescalePanel Server="server" ProviderName="@_view.ProviderName" OnChanged="LoadServerAsync" />
+    }
+
     @if (server.Status != ServerStatus.Deleting)
     {
         <ServerAccessPanel @ref="_access" ServerId="Id" ServerName="@server.Name" OnChanged="LoadServerAsync" />

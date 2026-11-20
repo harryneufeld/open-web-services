@@ -23,6 +23,7 @@ public sealed class ServerInventorySync(IServerRepository servers, IClock clock)
         {
             if (known.TryGetValue(observed.ExternalId, out var server))
             {
+                server.ApplyObservedType(observed.TypeName, observed.MonthlyNet, observed.Currency);
                 server.ApplyObserved(observed.State, observed.Ipv4, clock.UtcNow);
                 updated++;
             }
@@ -42,6 +43,7 @@ public sealed class ServerInventorySync(IServerRepository servers, IClock clock)
             // missing from the list is looked up directly; only a definite "not found" counts as gone.
             if (await provider.GetServerAsync(server.ExternalId!, ct) is { } direct)
             {
+                server.ApplyObservedType(direct.TypeName, direct.MonthlyNet, direct.Currency);
                 server.ApplyObserved(direct.State, direct.Ipv4, clock.UtcNow);
                 updated++;
             }

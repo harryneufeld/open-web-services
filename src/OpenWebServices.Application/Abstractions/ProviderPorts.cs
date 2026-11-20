@@ -41,6 +41,9 @@ public interface IProviderConnection
     /// <summary>Block storage volumes that attach to servers.</summary>
     IVolumeProvider? Volumes { get; }
 
+    /// <summary>Moving servers to another server type.</summary>
+    IServerRescaleProvider? Rescale { get; }
+
     /// <summary>Domain name search and ordering, for providers that are also registrars.</summary>
     IDomainRegistrar? Domains { get; }
 
@@ -117,6 +120,9 @@ public static class ProviderConnectionExtensions
 
     public static IVolumeProvider RequireVolumes(this IProviderConnection connection) =>
         connection.Volumes ?? throw new FeatureNotSupportedException(connection.Type.DisplayName, "volumes");
+
+    public static IServerRescaleProvider RequireRescale(this IProviderConnection connection) =>
+        connection.Rescale ?? throw new FeatureNotSupportedException(connection.Type.DisplayName, "rescaling servers");
 
     public static IFirewallProvider RequireFirewalls(this IProviderConnection connection) =>
         connection.Firewalls ?? throw new FeatureNotSupportedException(connection.Type.DisplayName, "firewalls");

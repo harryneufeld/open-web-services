@@ -55,7 +55,7 @@ internal sealed class ProviderGroupRepository(AppDbContext db) : IProviderGroupR
 internal sealed class ServerRepository(AppDbContext db) : IServerRepository
 {
     private static readonly ServerStatus[] Transitioning =
-        [ServerStatus.Provisioning, ServerStatus.Starting, ServerStatus.Stopping];
+        [ServerStatus.Provisioning, ServerStatus.Starting, ServerStatus.Stopping, ServerStatus.Rescaling];
 
     public void Add(Server server) => db.Servers.Add(server);
 

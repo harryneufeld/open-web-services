@@ -24,7 +24,8 @@ internal sealed record HetznerServerType(
 
 internal sealed record HetznerLocation(string Name, string City, string Country, string? NetworkZone = null);
 
-internal sealed record HetznerDatacenterTypes(List<long> Available);
+/// <param name="AvailableForMigration">Types existing servers in the datacenter can change to.</param>
+internal sealed record HetznerDatacenterTypes(List<long> Available, List<long>? AvailableForMigration = null);
 
 internal sealed record HetznerDatacenter(HetznerLocation Location, HetznerDatacenterTypes ServerTypes);
 
@@ -51,9 +52,12 @@ internal sealed record HetznerServer(
     HetznerLocation? Location,
     HetznerImage? Image,
     List<HetznerPrivateNet>? PrivateNet = null,
-    Dictionary<string, string>? Labels = null);
+    Dictionary<string, string>? Labels = null,
+    int? PrimaryDiskSize = null);
 
 internal sealed record HetznerServerEnvelope(HetznerServer Server);
+
+internal sealed record HetznerChangeTypeBody(string ServerType, bool UpgradeDisk);
 
 internal sealed record HetznerSshKey(long Id);
 

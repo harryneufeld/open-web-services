@@ -7,7 +7,8 @@ using static OpenWebServices.Infrastructure.Ovh.OvhApiClient;
 namespace OpenWebServices.Infrastructure.Ovh;
 
 /// <summary>OVHcloud Public Cloud server operations through the API v1.</summary>
-internal sealed class OvhServerProvider(OvhApiClient api, string projectId, string subsidiary, string endpoint) : IServerProvider
+internal sealed class OvhServerProvider(OvhApiClient api, string projectId, string subsidiary, string endpoint)
+    : IServerProvider, IServerRescaleProvider
 {
     /// <summary>The public catalog expresses prices in 1e-8 units of its currency.</summary>
     internal const decimal CatalogPriceScale = 100_000_000m;
@@ -91,6 +92,77 @@ internal sealed class OvhServerProvider(OvhApiClient api, string projectId, stri
 
     public Task DeleteSshKeyAsync(string externalSshKeyId, CancellationToken ct) =>
         api.DeleteAsync($"{ProjectPath}/sshkey/{Escape(externalSshKeyId)}", ct);
+
+    /// <summary>
+    /// OVHcloud resizes running instances in place and restarts them. Disks never shrink, so targets are flavors of the
+    /// same family (Linux or Windows, flex or not) and architecture with at least as much disk; monthly-billed
+    /// instances stay monthly.
+    /// </summary>
+    public async Task<RescaleOptions> GetRescaleOptionsAsync(string externalServerId, CancellationToken ct)
+    {
+        var instance = await GetInstanceAsync(externalServerId, ct);
+        var region = instance.Region ?? throw new ProviderException("OVHcloud does not say where the server is.");
+        var flavors = await GetFlavorsAsync(region, ct);
+        var current = flavors.FirstOrDefault(f => f.Id == instance.Flavor?.Id || f.Name == instance.Flavor?.Name) ?? instance.Flavor
+                      ?? throw new ProviderException("OVHcloud does not say which flavor the server has.");
+        var prices = await GetPricesAsync(ct);
+        var monthly = IsMonthly(instance, current);
+
+        ServerOffer? Offer(OvhFlavor flavor, bool available)
+        {
+            var price = monthly
+                ? prices.Find(flavor.PlanCodes?.Monthly ?? $"{flavor.Name}.monthly.postpaid")
+                : prices.Find(flavor.PlanCodes?.Hourly ?? $"{flavor.Name}.consumption");
+            return price is null
+                ? null
+                : ToOffer(region, flavor, price, prices.Currency) with { Available = available, Billing = monthly ? Monthly : null };
+        }
+
+        var targets = flavors
+            .Where(f => f.Name != current.Name && f.Disk >= current.Disk && SameFamily(f, current))
+            .Select(f => Offer(f, f.Available is not false))
+            .OfType<ServerOffer>()
+            .OrderBy(o => o.MonthlyNet)
+            .ThenBy(o => o.TypeName, StringComparer.Ordinal)
+            .ToList();
+
+        return new RescaleOptions(
+            Offer(current, available: true),
+            current.Disk,
+            targets,
+            StopsServer: false,
+            DiskIsOptional: false,
+            "OVHcloud restarts the server to resize it, which usually takes a few minutes. The disk grows to the new " +
+            "flavor's size and never shrinks, so the server cannot move back to a flavor with a smaller disk.");
+    }
+
+    public async Task RescaleAsync(string externalServerId, string typeName, bool growDisk, CancellationToken ct)
+    {
+        var instance = await GetInstanceAsync(externalServerId, ct);
+        var region = instance.Region ?? throw new ProviderException("OVHcloud does not say where the server is.");
+        var flavor = (await GetFlavorsAsync(region, ct)).FirstOrDefault(f => string.Equals(f.Name, typeName, StringComparison.OrdinalIgnoreCase))
+                     ?? throw new ProviderException($"OVHcloud server flavor {typeName} is unavailable in region {region}.");
+        await api.PostAsync($"{InstancePath(externalServerId)}/resize", new OvhResizeInstance(flavor.Id), ct);
+    }
+
+    private async Task<OvhInstance> GetInstanceAsync(string externalServerId, CancellationToken ct) =>
+        await api.GetAsync<OvhInstance>(InstancePath(externalServerId), ct, allowNotFound: true)
+        ?? throw new NotFoundException("Server at OVHcloud");
+
+    private static bool IsMonthly(OvhInstance instance, OvhFlavor flavor) =>
+        instance.PlanCode is { } planCode
+        && (string.Equals(planCode, flavor.PlanCodes?.Monthly, StringComparison.OrdinalIgnoreCase)
+            || planCode.Contains(".monthly", StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>OVHcloud resizes within Linux or Windows flavors, flex or not, of one architecture.</summary>
+    internal static bool SameFamily(OvhFlavor candidate, OvhFlavor current) =>
+        IsWindows(candidate) == IsWindows(current)
+        && IsFlex(candidate) == IsFlex(current)
+        && NormalizeArchitecture(candidate.Architecture) == NormalizeArchitecture(current.Architecture);
+
+    private static bool IsWindows(OvhFlavor flavor) => flavor.Name.StartsWith("win-", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsFlex(OvhFlavor flavor) => flavor.Name.EndsWith("-flex", StringComparison.OrdinalIgnoreCase);
 
     private string InstancePath(string externalId) => $"{ProjectPath}/instance/{Escape(externalId)}";
 
@@ -224,7 +296,7 @@ internal sealed class OvhServerProvider(OvhApiClient api, string projectId, stri
     {
         "ACTIVE" => ObservedServerState.Running,
         "STOPPED" or "SHUTOFF" or "SHELVED" or "SHELVED_OFFLOADED" or "SUSPENDED" or "PAUSED" => ObservedServerState.Stopped,
-        "BUILD" or "BUILDING" or "REBOOT" or "HARD_REBOOT" or "REBUILD" or "RESIZE" or "RESUMING" or "UNSHELVING"
+        "BUILD" or "BUILDING" or "REBOOT" or "HARD_REBOOT" or "REBUILD" or "RESIZE" or "VERIFY_RESIZE" or "RESUMING" or "UNSHELVING"
             or "MIGRATING" => ObservedServerState.Starting,
         "DELETING" or "SHELVING" => ObservedServerState.Stopping,
         _ => ObservedServerState.Unknown,

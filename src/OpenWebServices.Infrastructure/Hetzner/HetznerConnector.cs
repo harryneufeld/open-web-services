@@ -40,6 +40,7 @@ internal sealed class HetznerConnector(IHttpClientFactory httpClients) : IProvid
         public IFirewallProvider Firewalls { get; } = new HetznerFirewallProvider(api);
         public IServerLabelProvider ServerLabels { get; } = new HetznerLabelProvider(api);
         public IVolumeProvider Volumes { get; } = new HetznerVolumeProvider(api);
+        public IServerRescaleProvider Rescale { get; } = new HetznerRescaleProvider(api);
 
         // Hetzner Cloud has no domain registration API.
         public IDomainRegistrar? Domains => null;

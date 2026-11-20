@@ -46,6 +46,8 @@ internal sealed record OvhCreateInstance(
 
 internal sealed record OvhInstanceReboot(string Type);
 
+internal sealed record OvhResizeInstance(string FlavorId);
+
 // Public order catalog (order/catalog/public/cloud). Prices are in 1e-8 units of the locale currency.
 
 internal sealed record OvhCatalog(OvhCatalogLocale Locale, List<OvhCatalogAddon> Addons);
