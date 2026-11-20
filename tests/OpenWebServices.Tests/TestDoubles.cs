@@ -265,8 +265,12 @@ internal sealed class FakeServerProvider : IServerProvider
     /// <summary>Servers that exist but are not in the list yet, as with a provider whose list lags behind.</summary>
     public List<string> HiddenFromList { get; } = [];
 
+    /// <summary>What the list answers instead of <see cref="Servers"/>, e.g. stale entries.</summary>
+    public List<ProviderServer>? ListOverride { get; set; }
+
     public Task<IReadOnlyList<ProviderServer>> ListServersAsync(CancellationToken ct) =>
-        Task.FromResult<IReadOnlyList<ProviderServer>>(Servers.Where(s => !HiddenFromList.Contains(s.ExternalId)).ToList());
+        Task.FromResult<IReadOnlyList<ProviderServer>>(
+            (ListOverride ?? Servers).Where(s => !HiddenFromList.Contains(s.ExternalId)).ToList());
 
     public Task<ProviderServer?> GetServerAsync(string externalId, CancellationToken ct) =>
         Task.FromResult(Servers.FirstOrDefault(s => s.ExternalId == externalId));

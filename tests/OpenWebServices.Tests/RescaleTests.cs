@@ -145,6 +145,33 @@ public class RescaleTests
         await Assert.ThrowsAnyAsync<Exception>(() => Sut(TenantRole.Viewer).ExecuteAsync(_server.Id, "cx33", false, CancellationToken.None));
 
     [Fact]
+    public async Task The_sync_looks_up_rescaling_servers_directly_when_the_list_lags_behind()
+    {
+        var group = TestData.Group();
+        var server = Server.Provision(TestData.TenantId, group.Id, "web-2", "fsn1", "cx23", "ubuntu-24.04", 4m, "EUR",
+            "key", TestKeys.Ed25519Line(201), _clock.UtcNow);
+        server.AttachProviderResources("42", "7", "203.0.113.10");
+        server.ApplyObserved(ObservedServerState.Running, null, _clock.UtcNow);
+        _servers.Add(server);
+        server.BeginRescale(_clock.UtcNow);
+        _connection.ServerProvider.Servers[0] = Remote("cx33", 7m);
+        _connection.ServerProvider.ListOverride = [Remote("unknown", 0m)];
+
+        await new OpenWebServices.Application.Sync.ServerInventorySync(_servers, _clock).SyncAsync(group, _connection, CancellationToken.None);
+
+        Assert.Equal("cx33", server.ServerType);
+        Assert.Equal(7m, server.MonthlyPriceNet);
+        Assert.Equal(ServerStatus.Running, server.Status);
+    }
+
+    [Theory]
+    [InlineData("d2-2.consumption", "d2-2")]
+    [InlineData("b3-8.monthly.postpaid", "b3-8")]
+    [InlineData(null, null)]
+    public void Ovh_lists_name_the_flavor_through_the_plan_code(string? planCode, string? flavor) =>
+        Assert.Equal(flavor, OvhServerProvider.FlavorFromPlanCode(planCode));
+
+    [Fact]
     public async Task Providers_without_rescaling_say_so()
     {
         _connection.RescaleProvider = null;

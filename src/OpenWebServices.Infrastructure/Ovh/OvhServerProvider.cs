@@ -274,11 +274,18 @@ internal sealed class OvhServerProvider(OvhApiClient api, string projectId, stri
             MapStatus(instance.Status),
             PublicIpv4(instance),
             instance.Region ?? "unknown",
-            flavor?.Name ?? "unknown",
+            flavor?.Name ?? FlavorFromPlanCode(instance.PlanCode) ?? "unknown",
             instance.Image?.Name ?? instance.ImageId ?? "unknown",
             price.Net,
             prices.Currency);
     }
+
+    /// <summary>
+    /// The instance list carries no flavor object, only its id; the plan code starts with the flavor name
+    /// ("d2-2.consumption", "b3-8.monthly.postpaid").
+    /// </summary>
+    internal static string? FlavorFromPlanCode(string? planCode) =>
+        string.IsNullOrWhiteSpace(planCode) ? null : planCode.Split('.')[0];
 
     /// <summary>Uses the same names as the other providers ("x86", "arm") so offers can be compared and filtered.</summary>
     private static string NormalizeArchitecture(string? architecture) => architecture?.ToLowerInvariant() switch
