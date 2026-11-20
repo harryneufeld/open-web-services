@@ -10,8 +10,8 @@ namespace OpenWebServices.Infrastructure.Ovh;
 internal sealed class OvhServerProvider(OvhApiClient api, string projectId, string subsidiary, string endpoint) : IServerProvider
 {
     /// <summary>The public catalog expresses prices in 1e-8 units of its currency.</summary>
-    private const decimal CatalogPriceScale = 100_000_000m;
-    private const decimal HoursPerMonth = 730m;
+    internal const decimal CatalogPriceScale = 100_000_000m;
+    internal const decimal HoursPerMonth = 730m;
     private const int MaxConcurrentRequests = 6;
     // Object-storage-only regions (e.g. "BHS") are listed for the project too; their flavor list answers 404.
     private static readonly HttpStatusCode[] NoComputeInRegion = [HttpStatusCode.NotFound];

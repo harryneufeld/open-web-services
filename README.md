@@ -25,9 +25,10 @@ Adding a provider = implement `IProviderConnector` (returns an `IProviderConnect
 connector's `ProviderTypeInfo`. A new resource kind = a `ResourceKind` flag, a capability interface, and an
 `IResourceSync` implementation.
 
-Server networking (`IServerNetworkProvider`), firewalls (`IFirewallProvider`) and domain registration
-(`IDomainRegistrar`) are optional capabilities of a connection; the UI explains when a provider has none. They are
-read and written live at the provider, nothing is stored. Offers carry an `OfferTier` (provider-neutral category and
+Server networking (`IServerNetworkProvider`), firewalls (`IFirewallProvider`), volumes (`IVolumeProvider`) and domain
+registration (`IDomainRegistrar`) are optional capabilities of a connection; the UI explains when a provider has none. They are
+read and written live at the provider, nothing is stored. With SSH access ows also formats empty volumes, mounts
+them via `/etc/fstab` (with `nofail`), unmounts them before detaching and grows the filesystem after a resize. Offers carry an `OfferTier` (provider-neutral category and
 published availability SLA) for filtering.
 
 Provider setup notes: [OVHcloud setup](docs/ovh.md) (one group per Public Cloud project; consumer key with GET, POST, PUT and DELETE on `/*`).

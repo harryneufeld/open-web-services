@@ -157,3 +157,33 @@ internal sealed record HetznerSetRulesBody(List<HetznerFirewallRule> Rules);
 internal sealed record HetznerFirewallResourcesBody(List<HetznerFirewallResource> RemoveFrom);
 
 internal sealed record HetznerLabelsBody(Dictionary<string, string> Labels);
+
+// Volumes
+
+internal sealed record HetznerVolume(
+    long Id,
+    string Name,
+    int Size,
+    long? Server,
+    HetznerLocation? Location,
+    string? LinuxDevice,
+    string? Status);
+
+internal sealed record HetznerVolumeEnvelope(HetznerVolume Volume);
+
+internal sealed record HetznerVolumeCreated(HetznerVolume Volume, HetznerAction? Action, List<HetznerAction>? NextActions);
+
+internal sealed record HetznerCreateVolumeBody(
+    string Name, int Size, long Server, bool Automount, string? Format, Dictionary<string, string> Labels);
+
+internal sealed record HetznerAttachVolumeBody(long Server, bool Automount);
+
+internal sealed record HetznerResizeVolumeBody(int Size);
+
+internal sealed record HetznerRenameBody(string Name);
+
+internal sealed record HetznerVolumePricing(HetznerAmount PricePerGbMonth);
+
+internal sealed record HetznerPricing(string Currency, HetznerVolumePricing? Volume);
+
+internal sealed record HetznerPricingEnvelope(HetznerPricing Pricing);

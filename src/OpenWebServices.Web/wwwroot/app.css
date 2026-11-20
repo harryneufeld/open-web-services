@@ -652,13 +652,17 @@ tr.editing > td { padding: 14px 16px; background: var(--surface-2); white-space:
 .edit-grid.two { grid-template-columns: minmax(180px, 1fr) minmax(200px, 1.4fr) 150px; }
 .edit-grid.rules { grid-template-columns: 110px 150px minmax(200px, 1.6fr) minmax(140px, 1fr) 40px; }
 .edit-grid.rules.no-description { grid-template-columns: 110px 150px minmax(200px, 1fr) 40px; }
+.edit-grid.volumes { grid-template-columns: minmax(130px, 1fr) 100px 180px minmax(200px, 1.5fr) 110px auto; }
+.edit-grid.volumes.no-type { grid-template-columns: minmax(130px, 1fr) 100px minmax(200px, 1.5fr) 110px auto; }
+.edit-grid .usage { display: block; height: 4px; margin-top: 6px; max-width: 200px; border-radius: 2px; background: var(--border); overflow: hidden; }
+.edit-grid .usage > span { display: block; height: 100%; background: var(--accent); }
+.edit-grid .mount-form { display: flex; gap: 6px; align-items: center; }
 @media (max-width: 860px) {
-    .edit-grid, .edit-grid.two, .edit-grid.rules, .edit-grid.rules.no-description { grid-template-columns: 1fr; gap: 0; }
-    .edit-grid > .head { display: none; }
+    .edit-grid, .edit-grid.two, .edit-grid.rules, .edit-grid.rules.no-description, .edit-grid.volumes, .edit-grid.volumes.no-type { grid-template-columns: 1fr; gap: 0; }
     .edit-grid > .row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 12px 0; border-bottom: 1px solid var(--border); }
     .edit-grid > .row > [data-label]::before { content: attr(data-label); display: block; font-size: 0.75rem; font-weight: 550; color: var(--text-3); margin-bottom: 4px; }
     .edit-grid > .row > .wide, .edit-grid > .row > .row-actions { grid-column: 1 / -1; }
-    .edit-grid > .divider { display: none; }
+    .edit-grid > .divider, .edit-grid > .row.head { display: none; }
 }
 
 /* Copy buttons next to values such as IP addresses. */

@@ -38,6 +38,9 @@ public interface IProviderConnection
     /// <summary>Key/value labels on servers, for providers that support them.</summary>
     IServerLabelProvider? ServerLabels { get; }
 
+    /// <summary>Block storage volumes that attach to servers.</summary>
+    IVolumeProvider? Volumes { get; }
+
     /// <summary>Domain name search and ordering, for providers that are also registrars.</summary>
     IDomainRegistrar? Domains { get; }
 
@@ -111,6 +114,9 @@ public static class ProviderConnectionExtensions
 
     public static IServerNetworkProvider RequireNetworks(this IProviderConnection connection) =>
         connection.Networks ?? throw new FeatureNotSupportedException(connection.Type.DisplayName, "server networking");
+
+    public static IVolumeProvider RequireVolumes(this IProviderConnection connection) =>
+        connection.Volumes ?? throw new FeatureNotSupportedException(connection.Type.DisplayName, "volumes");
 
     public static IFirewallProvider RequireFirewalls(this IProviderConnection connection) =>
         connection.Firewalls ?? throw new FeatureNotSupportedException(connection.Type.DisplayName, "firewalls");

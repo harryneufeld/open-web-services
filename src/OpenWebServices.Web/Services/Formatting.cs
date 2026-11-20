@@ -9,6 +9,10 @@ public static class Formatting
     public static string Money(decimal amount, string currency) =>
         string.Create(German, $"{amount:N2} {(currency == "EUR" ? "€" : currency)}");
 
+    /// <summary>A byte count in GB as providers size volumes (1 GB = 1024³ bytes), e.g. "12,5 GB".</summary>
+    public static string Gigabytes(long bytes) =>
+        string.Create(German, $"{bytes / 1073741824m:N1} GB");
+
     /// <summary>
     /// The address to use from an IPv6 value: "2001:db8::/64" → "2001:db8::1" (the first address, as providers assign
     /// it), "2001:db8::7" stays as it is.

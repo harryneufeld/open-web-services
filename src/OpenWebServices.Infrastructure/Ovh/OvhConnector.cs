@@ -5,7 +5,7 @@ using OpenWebServices.Domain.Providers;
 
 namespace OpenWebServices.Infrastructure.Ovh;
 
-/// <summary>OVHcloud API v1 connector for Public Cloud instances and DNS records.</summary>
+/// <summary>OVHcloud API v1 connector for Public Cloud instances, volumes and DNS records.</summary>
 internal sealed class OvhConnector(IHttpClientFactory httpClients, ILogger<OvhApiClient> logger) : IProviderConnector
 {
     public const string ProviderType = "ovh";
@@ -80,6 +80,7 @@ internal sealed class OvhConnector(IHttpClientFactory httpClients, ILogger<OvhAp
         // API v1 has no security groups for Public Cloud instances; the Edge Network Firewall is used instead.
         public IFirewallProvider Firewalls { get; } = new OvhFirewallProvider(api, projectId);
         public IDomainRegistrar Domains { get; } = new OvhDomainRegistrar(api, subsidiary);
+        public IVolumeProvider Volumes { get; } = new OvhVolumeProvider(api, projectId, subsidiary, endpoint);
 
         // Public Cloud instances have no labels in API v1.
         public IServerLabelProvider? ServerLabels => null;

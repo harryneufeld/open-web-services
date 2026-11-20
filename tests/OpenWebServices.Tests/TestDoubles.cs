@@ -130,6 +130,9 @@ internal sealed class FakeRemoteShell : IRemoteShell
 
     public bool SudoNeedsPassword { get; set; }
 
+    /// <summary>Answers commands a test cares about; null falls through to the default reply.</summary>
+    public Func<string, CommandResult?>? Respond { get; set; }
+
     public Task<CommandResult> RunAsync(RemoteTarget target, string command, CancellationToken ct)
     {
         Authenticate(target);
@@ -146,6 +149,8 @@ internal sealed class FakeRemoteShell : IRemoteShell
                 return Task.FromResult(new CommandResult(1, "sudo: a password is required"));
             command = command.Replace("sudo -n ", "", StringComparison.Ordinal);
         }
+        if (Respond?.Invoke(command) is { } reply)
+            return Task.FromResult(reply);
         if (command.StartsWith("cat ", StringComparison.Ordinal))
             return Task.FromResult(new CommandResult(0, AuthorizedKeys));
         if (command.Contains("base64 -d", StringComparison.Ordinal))
@@ -333,6 +338,8 @@ internal sealed class FakeConnection : IProviderConnection
     public IDomainRegistrar? Domains => Registrar;
     public FakeLabelProvider? LabelProvider { get; set; } = new();
     public IServerLabelProvider? ServerLabels => LabelProvider;
+    public FakeVolumeProvider? VolumeProvider { get; set; } = new();
+    public IVolumeProvider? Volumes => VolumeProvider;
     public bool RejectCredentials { get; set; }
 
     public Task VerifyAsync(CancellationToken ct) =>
