@@ -97,10 +97,15 @@ internal sealed class HetznerServerProvider(HetznerApiClient api) : IServerProvi
         Dictionary<string, HetznerLocation> locations,
         Dictionary<string, HashSet<long>>? availability)
     {
-        locations.TryGetValue(price.Location, out var location);
         var available = availability is null
                         || (availability.TryGetValue(price.Location, out var ids) && ids.Contains(type.Id));
+        return ToOffer(type, price, locations, available);
+    }
 
+    internal static ServerOffer ToOffer(
+        HetznerServerType type, HetznerPrice price, Dictionary<string, HetznerLocation> locations, bool available)
+    {
+        locations.TryGetValue(price.Location, out var location);
         return new ServerOffer(
             HetznerConnector.ProviderType, price.Location, location?.City ?? price.Location, location?.Country ?? "",
             type.Name, type.Cores, type.CpuType, type.Architecture, type.Memory, type.Disk,
@@ -129,7 +134,7 @@ internal sealed class HetznerServerProvider(HetznerApiClient api) : IServerProvi
         return new OfferTier(category, line, AvailabilitySla);
     }
 
-    private static bool IsDeprecatedAt(HetznerServerType type, string location) =>
+    internal static bool IsDeprecatedAt(HetznerServerType type, string location) =>
         type.Locations?.Any(l => l.Name == location && l.Deprecation is not null) ?? false;
 
     internal static ObservedServerState MapStatus(string status) => status switch

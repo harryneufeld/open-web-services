@@ -1,0 +1,203 @@
+@* Moves a server to another server type. The types load from the provider only when the user opens the list. *@
+@inject UseCaseRunner Runner
+
+<section class="panel" aria-labelledby="rescale">
+    <div class="panel-header">
+        <div>
+            <h2 id="rescale">Server type</h2>
+            <p>@Server.ServerType at @Formatting.Money(Server.MonthlyPriceNet, Server.Currency) a month, net. Rescale for more or fewer vCPUs and memory.</p>
+        </div>
+        @if (!_open)
+        {
+            <button class="btn" disabled="@(Server.Status == ServerStatus.Rescaling)" @onclick="OpenAsync"><Icon Name="server" />Change type…</button>
+        }
+        else
+        {
+            <button class="btn btn-ghost btn-sm" disabled="@_busy" @onclick="Close">Close</button>
+        }
+    </div>
+    @if (Server.Status == ServerStatus.Rescaling)
+    {
+        <div class="panel-body"><Notice>@Server.Name is moving to another type. The new type shows here once the provider reports it.</Notice></div>
+    }
+    @if (_error is not null)
+    {
+        <div class="panel-body"><Notice Kind="error">@_error</Notice></div>
+    }
+    @if (_rescaledTo is not null && Server.Status != ServerStatus.Rescaling)
+    {
+        <div class="panel-body"><Notice Kind="success">@(Server.ServerType == _rescaledTo ? $"{Server.Name} runs as {_rescaledTo} now." : $"{Server.Name} is moving to {_rescaledTo}.")</Notice></div>
+    }
+    @if (_open)
+    {
+        @if (_view is null)
+        {
+            <SkeletonRows Count="3" />
+        }
+        else if (_view.Options is not { } options)
+        {
+            <div class="panel-body"><Notice>@_view.Unavailable</Notice></div>
+        }
+        else if (options.Targets.Count == 0)
+        {
+            <div class="panel-body"><p class="hint">@ProviderName offers no other type this server can move to in @Server.Location.</p></div>
+        }
+        else
+        {
+            var current = options.Current;
+            <div class="table-wrap" style="max-height: 420px">
+                <table class="stack offers">
+                    <thead>
+                        <tr><th>Type</th><th class="num">vCPU</th><th class="num">Memory</th><th class="num">Disk</th><th class="num">Monthly, net</th><th class="num">Change</th></tr>
+                    </thead>
+                    <tbody>
+                        @if (current is not null)
+                        {
+                            <tr class="current">
+                                <td><span class="offer-pick"><span><span class="offer-name"><strong>@current.TypeName</strong><span class="tag">Current</span></span><span class="secondary">@TierLine(current)</span></span></span></td>
+                                <td data-label="vCPU" class="num">@current.VCpus</td>
+                                <td data-label="Memory" class="num">@current.MemoryGb GB</td>
+                                <td data-label="Disk" class="num">@options.DiskGb GB</td>
+                                <td data-label="Monthly" class="num"><strong>@Formatting.Money(current.MonthlyNet, current.Currency)</strong></td>
+                                <td data-label="Change" class="num muted">–</td>
+                            </tr>
+                        }
+                        @foreach (var o in options.Targets)
+                        {
+                            <tr class="@(o.Available ? "selectable" : "unavailable") @(o.TypeName == _selected ? "selected" : null)" @onclick="() => Select(o)">
+                                <td><label class="offer-pick"><input type="radio" name="rescale-target" checked="@(o.TypeName == _selected)" disabled="@(!o.Available)" aria-label="@o.TypeName" /><span><span class="offer-name"><strong>@o.TypeName</strong>@if (!o.Available)
+                                    {
+                                        <span class="tag">Sold out</span>
+                                    }</span><span class="secondary">@TierLine(o)</span></span></label></td>
+                                <td data-label="vCPU" class="num">@o.VCpus</td>
+                                <td data-label="Memory" class="num">@o.MemoryGb GB</td>
+                                <td data-label="Disk" class="num">@o.DiskGb GB</td>
+                                <td data-label="Monthly" class="num"><strong>@Formatting.Money(o.MonthlyNet, o.Currency)</strong></td>
+                                <td data-label="Change" class="num muted">@(current is null ? "–" : Difference(o.MonthlyNet - current.MonthlyNet, o.Currency))</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            <div class="panel-body stack">
+                <p class="hint">@options.Note</p>
+                @if (Chosen(options) is { } chosen && options.DiskIsOptional && chosen.DiskGb > options.DiskGb)
+                {
+                    <div class="field">
+                        <label class="check"><input type="checkbox" @bind="_growDisk" />Grow the disk to @chosen.DiskGb GB</label>
+                        <span class="hint">@(_growDisk
+                            ? $"The server cannot move back to a type with less than {chosen.DiskGb} GB disk afterwards."
+                            : $"The disk stays at {options.DiskGb} GB, so the server can move back to a smaller type later.")</span>
+                    </div>
+                }
+            </div>
+            @if (Chosen(options) is { } target)
+            {
+                <div class="panel-footer">
+                    @if (!Server.CanRescale)
+                    {
+                        <span class="subtle" style="margin-right:auto; align-self:center">A server can be rescaled once it is running or stopped.</span>
+                    }
+                    <button class="btn btn-ghost" disabled="@_busy" @onclick="() => _selected = null">Undo</button>
+                    <button class="btn btn-primary" disabled="@(_busy || !Server.CanRescale)" @onclick="() => RescaleAsync(target)">
+                        @if (_busy)
+                        {
+                            <span class="spinner"></span><text>Rescaling…</text>
+                        }
+                        else
+                        {
+                            <text>@(options.StopsServer && Server.Status == ServerStatus.Running ? "Shut down and rescale" : "Rescale") to @target.TypeName</text>
+                        }
+                    </button>
+                </div>
+            }
+        }
+    }
+</section>
+
+@code {
+    private RescaleView? _view;
+    private bool _open;
+    private bool _busy;
+    private string? _selected;
+    private bool _growDisk;
+    private string? _error;
+    private string? _rescaledTo;
+
+    [Parameter, EditorRequired] public Server Server { get; set; } = null!;
+
+    [Parameter, EditorRequired] public string ProviderName { get; set; } = "";
+
+    /// <summary>Called after a rescale, so the page reloads the server.</summary>
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    private async Task OpenAsync()
+    {
+        _open = true;
+        _rescaledTo = null;
+        await LoadAsync();
+    }
+
+    private void Close()
+    {
+        _open = false;
+        _selected = null;
+        _error = null;
+    }
+
+    private async Task LoadAsync()
+    {
+        _error = null;
+        try
+        {
+            _view = await Runner.RunAsync<RescaleServer, RescaleView>(u => u.GetAsync(Server.Id, CancellationToken.None));
+        }
+        catch (Exception ex) when (UserFacingErrors.Matches(ex))
+        {
+            _error = ex.Message;
+            _view = new RescaleView(null, "The server types could not be loaded.");
+        }
+    }
+
+    private void Select(ServerOffer offer)
+    {
+        if (!offer.Available || _busy)
+            return;
+        _selected = offer.TypeName;
+        _growDisk = false;
+        _error = null;
+    }
+
+    private ServerOffer? Chosen(RescaleOptions options) => options.Targets.FirstOrDefault(t => t.TypeName == _selected);
+
+    private async Task RescaleAsync(ServerOffer target)
+    {
+        _busy = true;
+        _error = null;
+        _rescaledTo = null;
+        try
+        {
+            await Runner.RunAsync<RescaleServer>(u => u.ExecuteAsync(Server.Id, target.TypeName, _growDisk, CancellationToken.None));
+            _rescaledTo = target.TypeName;
+            _open = false;
+            _selected = null;
+            _view = null;
+        }
+        catch (Exception ex) when (UserFacingErrors.Matches(ex))
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+
+        await OnChanged.InvokeAsync();
+    }
+
+    private static string TierLine(ServerOffer offer) => string.Join(" · ",
+        new[] { offer.Tier.ProductLine, offer.CpuKind, offer.Architecture }.Where(part => !string.IsNullOrWhiteSpace(part)));
+
+    private static string Difference(decimal delta, string currency) =>
+        delta == 0 ? "±0" : (delta > 0 ? "+" : "−") + Formatting.Money(Math.Abs(delta), currency);
+}

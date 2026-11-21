@@ -9,6 +9,9 @@ public enum ServerStatus
     Deleting = 4,
     Starting = 5,
     Stopping = 6,
+
+    /// <summary>The server is moving to another server type.</summary>
+    Rescaling = 7,
 }
 
 /// <summary>Where a server record came from.</summary>

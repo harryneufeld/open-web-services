@@ -19,10 +19,16 @@ public sealed class ServerInventorySync(IServerRepository servers, IClock clock)
         var known = local.Where(s => s.ExternalId is not null).ToDictionary(s => s.ExternalId!);
         int added = 0, updated = 0, removed = 0;
 
-        foreach (var observed in remote)
+        foreach (var listed in remote)
         {
+            var observed = listed;
             if (known.TryGetValue(observed.ExternalId, out var server))
             {
+                // Lists can lag behind a resize or leave the type out (OVHcloud lists only a flavor id), so a server
+                // that is being rescaled is looked up directly.
+                if (server.Status == ServerStatus.Rescaling)
+                    observed = await provider.GetServerAsync(observed.ExternalId, ct) ?? observed;
+                server.ApplyObservedType(observed.TypeName, observed.MonthlyNet, observed.Currency);
                 server.ApplyObserved(observed.State, observed.Ipv4, clock.UtcNow);
                 updated++;
             }
@@ -42,6 +48,7 @@ public sealed class ServerInventorySync(IServerRepository servers, IClock clock)
             // missing from the list is looked up directly; only a definite "not found" counts as gone.
             if (await provider.GetServerAsync(server.ExternalId!, ct) is { } direct)
             {
+                server.ApplyObservedType(direct.TypeName, direct.MonthlyNet, direct.Currency);
                 server.ApplyObserved(direct.State, direct.Ipv4, clock.UtcNow);
                 updated++;
             }

@@ -265,8 +265,12 @@ internal sealed class FakeServerProvider : IServerProvider
     /// <summary>Servers that exist but are not in the list yet, as with a provider whose list lags behind.</summary>
     public List<string> HiddenFromList { get; } = [];
 
+    /// <summary>What the list answers instead of <see cref="Servers"/>, e.g. stale entries.</summary>
+    public List<ProviderServer>? ListOverride { get; set; }
+
     public Task<IReadOnlyList<ProviderServer>> ListServersAsync(CancellationToken ct) =>
-        Task.FromResult<IReadOnlyList<ProviderServer>>(Servers.Where(s => !HiddenFromList.Contains(s.ExternalId)).ToList());
+        Task.FromResult<IReadOnlyList<ProviderServer>>(
+            (ListOverride ?? Servers).Where(s => !HiddenFromList.Contains(s.ExternalId)).ToList());
 
     public Task<ProviderServer?> GetServerAsync(string externalId, CancellationToken ct) =>
         Task.FromResult(Servers.FirstOrDefault(s => s.ExternalId == externalId));
@@ -340,6 +344,8 @@ internal sealed class FakeConnection : IProviderConnection
     public IServerLabelProvider? ServerLabels => LabelProvider;
     public FakeVolumeProvider? VolumeProvider { get; set; } = new();
     public IVolumeProvider? Volumes => VolumeProvider;
+    public FakeRescaleProvider? RescaleProvider { get; set; } = new();
+    public IServerRescaleProvider? Rescale => RescaleProvider;
     public bool RejectCredentials { get; set; }
 
     public Task VerifyAsync(CancellationToken ct) =>
@@ -470,6 +476,32 @@ internal sealed class FakeLabelProvider : IServerLabelProvider
     public Task SetLabelsAsync(string externalServerId, IReadOnlyDictionary<string, string> labels, CancellationToken ct)
     {
         Labels[externalServerId] = labels;
+        return Task.CompletedTask;
+    }
+}
+
+internal sealed class FakeRescaleProvider : IServerRescaleProvider
+{
+    public static readonly ServerOffer Bigger =
+        new("fake", "fsn1", "Falkenstein", "DE", "cx33", 4, "shared", "x86", 8, 80, 7.00m, 8.33m, "EUR", true);
+
+    public RescaleOptions Options { get; set; } = new(
+        FakeServerProvider.CheapOffer, 40, [Bigger], StopsServer: true, DiskIsOptional: true, "note");
+
+    public List<(string Id, string Type, bool GrowDisk)> Calls { get; } = [];
+    public Exception? Failure { get; set; }
+
+    /// <summary>Runs after a successful call, e.g. to let the fake server report its new type.</summary>
+    public Action<string>? OnRescaled { get; set; }
+
+    public Task<RescaleOptions> GetRescaleOptionsAsync(string externalServerId, CancellationToken ct) => Task.FromResult(Options);
+
+    public Task RescaleAsync(string externalServerId, string typeName, bool growDisk, CancellationToken ct)
+    {
+        Calls.Add((externalServerId, typeName, growDisk));
+        if (Failure is not null)
+            throw Failure;
+        OnRescaled?.Invoke(typeName);
         return Task.CompletedTask;
     }
 }

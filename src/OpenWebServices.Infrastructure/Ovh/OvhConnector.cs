@@ -72,8 +72,13 @@ internal sealed class OvhConnector(IHttpClientFactory httpClients, ILogger<OvhAp
 
     private sealed class Connection(ProviderTypeInfo type, OvhApiClient api, string projectId, string subsidiary, string endpoint) : IProviderConnection
     {
+        private readonly OvhServerProvider _servers = new(api, projectId, subsidiary, endpoint);
+
         public ProviderTypeInfo Type => type;
-        public IServerProvider Servers { get; } = new OvhServerProvider(api, projectId, subsidiary, endpoint);
+        public IServerProvider Servers => _servers;
+
+        // Resizing shares the flavor and price lookups of the server provider.
+        public IServerRescaleProvider Rescale => _servers;
         public IDnsProvider Dns { get; } = new OvhDnsProvider(api);
         public IServerNetworkProvider Networks { get; } = new OvhNetworkProvider(api, projectId);
 

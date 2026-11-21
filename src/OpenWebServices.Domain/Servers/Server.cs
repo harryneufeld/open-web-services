@@ -13,6 +13,12 @@ public sealed partial class Server
     /// </summary>
     public static readonly TimeSpan PendingGrace = TimeSpan.FromSeconds(90);
 
+    /// <summary>
+    /// How long a rescale wins over the states the provider reports meanwhile (off, migrating, resizing). A rescale
+    /// ends earlier as soon as the provider reports the new type.
+    /// </summary>
+    public static readonly TimeSpan RescaleGrace = TimeSpan.FromMinutes(20);
+
     private Server() { } // EF Core
 
     public Guid Id { get; private set; }
@@ -159,7 +165,11 @@ public sealed partial class Server
         string.IsNullOrEmpty(UnknownKeysText) ? [] : UnknownKeysText.Split(LineSeparator);
 
     /// <summary>True while the server is expected to change state soon; syncs run more often then.</summary>
-    public bool IsTransitioning => Status is ServerStatus.Provisioning or ServerStatus.Starting or ServerStatus.Stopping;
+    public bool IsTransitioning =>
+        Status is ServerStatus.Provisioning or ServerStatus.Starting or ServerStatus.Stopping or ServerStatus.Rescaling;
+
+    /// <summary>The server can move to another type now: it exists at the provider and is not busy.</summary>
+    public bool CanRescale => ExternalId is not null && Status is ServerStatus.Running or ServerStatus.Stopped;
 
     public void AttachProviderResources(string externalId, string externalSshKeyId, string? ipv4)
     {
@@ -261,6 +271,45 @@ public sealed partial class Server
 
     public void MarkStopping(DateTime nowUtc) => BeginTransition(ServerStatus.Stopping, nowUtc);
 
+    /// <summary>Shows the server as rescaling until the provider reports a new type or the grace period ends.</summary>
+    public void BeginRescale(DateTime nowUtc)
+    {
+        if (!CanRescale)
+            throw new DomainException("A server can be rescaled once it is running or stopped.");
+        Status = ServerStatus.Rescaling;
+        PendingSinceUtc = nowUtc;
+    }
+
+    /// <summary>Ends a rescale that failed or was not confirmed; the next observed state shows what the server is.</summary>
+    public void EndRescale()
+    {
+        if (Status != ServerStatus.Rescaling)
+            return;
+        Status = ServerStatus.Stopped; // like an import: an unknown state shows as stopped rather than "busy" forever
+        PendingSinceUtc = null;
+    }
+
+    /// <summary>
+    /// Reconciles type and price with what the provider reports. A new type ends a rescale. A price of zero means the
+    /// provider lists none, so the last known price stays.
+    /// </summary>
+    public void ApplyObservedType(string typeName, decimal monthlyPriceNet, string currency)
+    {
+        if (Status == ServerStatus.Deleting || string.IsNullOrWhiteSpace(typeName) || typeName == "unknown")
+            return;
+        if (typeName != ServerType)
+        {
+            ServerType = typeName;
+            EndRescale();
+        }
+
+        if (monthlyPriceNet > 0)
+        {
+            MonthlyPriceNet = monthlyPriceNet;
+            Currency = currency;
+        }
+    }
+
     /// <summary>Reconciles the record with the state the provider reports.</summary>
     public void ApplyObserved(ObservedServerState state, string? ipv4, DateTime nowUtc)
     {
@@ -268,6 +317,12 @@ public sealed partial class Server
             return;
         if (ipv4 is not null)
             PublicIpv4 = ipv4;
+        if (Status == ServerStatus.Rescaling)
+        {
+            if (PendingSinceUtc is { } started && nowUtc - started < RescaleGrace)
+                return;
+            EndRescale();
+        }
 
         var pending = PendingSinceUtc is { } since && nowUtc - since < PendingGrace;
         switch (state)
